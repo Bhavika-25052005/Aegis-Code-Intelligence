@@ -13,6 +13,11 @@ export const useExecutionStore = defineStore('execution', () => {
     try {
       const { data } = await api.post(`/projects/${projectId}/execute`)
       status.value = data
+      logs.value.push(`[INFO] Execution started: ${data.total_tasks} tasks`)
+    } catch (e: unknown) {
+      const err = e as { response?: { data?: { detail?: string }, status?: number } }
+      const msg = err.response?.data?.detail || 'Failed to start execution'
+      logs.value.push(`[ERROR] ${msg}`)
     } finally {
       loading.value = false
     }

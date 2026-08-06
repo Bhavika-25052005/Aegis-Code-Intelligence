@@ -1,3 +1,4 @@
+import logging
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
@@ -6,6 +7,8 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.api import api_router
 from app.api.websocket import router as ws_router
 from app.database import init_db
+
+logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
 
 
 @asynccontextmanager
@@ -36,3 +39,11 @@ app.include_router(ws_router)
 @app.get("/health")
 async def health():
     return {"status": "healthy", "service": "codegen-hub"}
+
+
+@app.get("/debug/ws")
+async def debug_ws():
+    from app.services.websocket_manager import manager
+    return {
+        "connections": {k: len(v) for k, v in manager._connections.items()},
+    }

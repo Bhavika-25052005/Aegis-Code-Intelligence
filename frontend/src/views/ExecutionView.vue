@@ -4,6 +4,8 @@ import { useRoute } from 'vue-router'
 import { useExecutionStore } from '../stores/execution'
 import { useBacklogStore } from '../stores/backlog'
 import { useWebSocket } from '../composables/useWebSocket'
+import TestReport from '../components/execution/TestReport.vue'
+import api from '../api/client'
 
 const route = useRoute()
 const executionStore = useExecutionStore()
@@ -12,11 +14,13 @@ const projectId = route.params.id as string
 
 const { connected, messages, connect } = useWebSocket(projectId)
 const taskStatuses = ref<Record<string, { status: string; title: string }>>({})
+const testReportRef = ref<InstanceType<typeof TestReport> | null>(null)
 
 onMounted(async () => {
   await backlogStore.fetchBacklog(projectId)
   await executionStore.fetchStatus(projectId)
   connect()
+  executionStore.addLog(`[INFO] Page loaded. Status: ${executionStore.status?.status || 'none'}. Click Start to begin.`)
 })
 
 watch(messages, (msgs) => {
@@ -24,17 +28,43 @@ watch(messages, (msgs) => {
   if (!latest) return
 
   if (latest.type === 'task_status_change') {
-    const payload = latest.payload as { task_id: string; status: string; title?: string }
+    const payload = latest.payload as { task_id: string; status: string; title?: string; completed_tasks?: number; failed_tasks?: number; total_tasks?: number }
     taskStatuses.value[payload.task_id] = {
       status: payload.status,
       title: payload.title || '',
     }
+    if (executionStore.status) {
+      if (payload.completed_tasks !== undefined) executionStore.status.completed_tasks = payload.completed_tasks
+      if (payload.failed_tasks !== undefined) executionStore.status.failed_tasks = payload.failed_tasks
+      if (payload.total_tasks !== undefined) executionStore.status.total_tasks = payload.total_tasks
+    }
     executionStore.addLog(`[${payload.status.toUpperCase()}] ${payload.title || payload.task_id}`)
+  } else if (latest.type === 'claude_output') {
+    const payload = latest.payload as { message: string }
+    executionStore.addLog(`[CLAUDE] ${payload.message}`)
+  } else if (latest.type === 'test_started') {
+    const payload = latest.payload as { task_id: string; test_type: string }
+    executionStore.addLog(`[TEST] Running ${payload.test_type} tests...`)
+  } else if (latest.type === 'test_completed') {
+    const payload = latest.payload as { task_id: string; test_type: string; passed: boolean; total: number; failed: number; coverage: number; fix_attempt?: number }
+    const icon = payload.passed ? 'PASS' : 'FAIL'
+    const fixNote = payload.fix_attempt ? ` (fix #${payload.fix_attempt})` : ''
+    executionStore.addLog(`[${icon}] ${payload.test_type}: ${payload.total - payload.failed}/${payload.total} passed, ${payload.coverage.toFixed(0)}% coverage${fixNote}`)
+    testReportRef.value?.fetchTestRuns()
+    testReportRef.value?.checkActiveTest()
+  } else if (latest.type === 'fix_attempt') {
+    const payload = latest.payload as { task_id: string; attempt: number; reason: string }
+    executionStore.addLog(`[FIX] Attempt ${payload.attempt}: ${payload.reason}`)
   } else if (latest.type === 'pr_created') {
     const payload = latest.payload as { pr_url: string; title: string }
     executionStore.addLog(`[PR] Created: ${payload.title} - ${payload.pr_url}`)
   } else if (latest.type === 'execution_complete') {
     executionStore.addLog('[DONE] Execution completed')
+    if (executionStore.status) executionStore.status.status = 'completed'
+    testReportRef.value?.fetchTestRuns()
+  } else if (latest.type === 'error') {
+    const payload = latest.payload as { message: string }
+    executionStore.addLog(`[ERROR] ${payload.message}`)
   }
 }, { deep: true })
 
@@ -49,6 +79,19 @@ async function handlePause() {
 
 async function handleResume() {
   await executionStore.resumeExecution(projectId)
+}
+
+async function handleReset() {
+  try {
+    await api.post(`/projects/${projectId}/execute/reset`)
+    executionStore.status = null
+    executionStore.clearLogs()
+    taskStatuses.value = {}
+    executionStore.addLog('[INFO] All tasks reset to pending. Ready to re-run.')
+  } catch (e: unknown) {
+    const err = e as { response?: { data?: { detail?: string } } }
+    executionStore.addLog(`[ERROR] Reset failed: ${err.response?.data?.detail || 'Unknown error'}`)
+  }
 }
 
 function getStatusIcon(status: string) {
@@ -72,7 +115,14 @@ function getStatusIcon(status: string) {
           {{ connected ? 'Connected' : 'Disconnected' }}
         </span>
         <button
-          v-if="!executionStore.status || executionStore.status.status === 'completed'"
+          v-if="executionStore.status && (executionStore.status.status === 'completed' || executionStore.status.status === 'failed')"
+          @click="handleReset"
+          class="px-4 py-2 border border-orange-500 text-orange-500 rounded-lg hover:bg-orange-50 dark:hover:bg-orange-900/20 flex items-center gap-2"
+        >
+          <i class="pi pi-refresh"></i> Reset
+        </button>
+        <button
+          v-if="!executionStore.status || executionStore.status.status === 'completed' || executionStore.status.status === 'failed' || executionStore.status.status === 'cancelled'"
           @click="handleStart"
           :disabled="executionStore.loading"
           class="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:opacity-50 flex items-center gap-2"
@@ -147,6 +197,9 @@ function getStatusIcon(status: string) {
         </p>
       </div>
     </div>
+
+    <!-- Test Results -->
+    <TestReport ref="testReportRef" :project-id="projectId" />
 
     <!-- Log Viewer -->
     <div class="bg-gray-900 rounded-xl p-5">

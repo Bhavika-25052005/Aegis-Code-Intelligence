@@ -98,13 +98,20 @@ async def delete_feature(project_id: str, feature_id: str, db: AsyncSession = De
 
 
 async def _save_parsed_backlog(db: AsyncSession, project_id: str, parsed: list[dict]):
+    from sqlalchemy import func as sa_func
+    result = await db.execute(
+        select(sa_func.max(Feature.order)).where(Feature.project_id == project_id)
+    )
+    max_order = result.scalar() or -1
+    order_offset = max_order + 1
+
     for f_idx, feature_data in enumerate(parsed):
         feature = Feature(
             project_id=project_id,
             external_id=feature_data.get("external_id", ""),
             title=feature_data["title"],
             description=feature_data.get("description", ""),
-            order=f_idx,
+            order=order_offset + f_idx,
         )
         db.add(feature)
         await db.flush()

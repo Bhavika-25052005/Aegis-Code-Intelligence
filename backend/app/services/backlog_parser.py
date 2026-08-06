@@ -7,6 +7,26 @@ import yaml
 
 
 class BacklogParser:
+    @staticmethod
+    def _clean_id(value) -> str:
+        if value is None or (isinstance(value, float) and pd.isna(value)):
+            return ""
+        s = str(value).strip()
+        if s.endswith(".0"):
+            s = s[:-2]
+        if s.lower() in ("nan", "none", ""):
+            return ""
+        return s
+
+    @staticmethod
+    def _clean_str(value) -> str:
+        if value is None or (isinstance(value, float) and pd.isna(value)):
+            return ""
+        s = str(value).strip()
+        if s.lower() in ("nan", "none"):
+            return ""
+        return s
+
     def parse(self, content: bytes, filename: str) -> list[dict]:
         ext = Path(filename).suffix.lower()
         if ext in (".xlsx", ".xls"):
@@ -70,11 +90,11 @@ class BacklogParser:
             item_type = str(row.get(type_col, "")).lower().strip()
             items.append({
                 "type": item_type,
-                "id": str(row.get(id_col, "")) if id_col else "",
-                "title": str(row.get(title_col, "")),
-                "description": str(row.get(desc_col, "")) if desc_col else "",
-                "parent_id": str(row.get(parent_col, "")) if parent_col else "",
-                "acceptance_criteria": str(row.get(ac_col, "")) if ac_col else "",
+                "id": self._clean_id(row.get(id_col)) if id_col else "",
+                "title": self._clean_str(row.get(title_col)),
+                "description": self._clean_str(row.get(desc_col)) if desc_col else "",
+                "parent_id": self._clean_id(row.get(parent_col)) if parent_col else "",
+                "acceptance_criteria": self._clean_str(row.get(ac_col)) if ac_col else "",
             })
 
         return self._build_hierarchy_from_flat(items)
@@ -90,27 +110,27 @@ class BacklogParser:
 
         features = {}
         for _, row in df.iterrows():
-            feature_name = str(row.get(feature_col, "")).strip()
-            if not feature_name or feature_name == "nan":
+            feature_name = self._clean_str(row.get(feature_col))
+            if not feature_name:
                 continue
 
             if feature_name not in features:
                 features[feature_name] = {"title": feature_name, "description": "", "user_stories": []}
 
-            story_name = str(row.get(story_col, "")).strip() if story_col else ""
-            if story_name and story_name != "nan":
+            story_name = self._clean_str(row.get(story_col)) if story_col else ""
+            if story_name:
                 stories = features[feature_name]["user_stories"]
                 story = next((s for s in stories if s["title"] == story_name), None)
                 if not story:
                     story = {"title": story_name, "description": "", "tasks": []}
                     stories.append(story)
 
-                task_name = str(row.get(task_col, "")).strip() if task_col else ""
-                if task_name and task_name != "nan":
-                    desc = str(row.get(desc_col, "")).strip() if desc_col else ""
+                task_name = self._clean_str(row.get(task_col)) if task_col else ""
+                if task_name:
+                    desc = self._clean_str(row.get(desc_col)) if desc_col else ""
                     story["tasks"].append({
                         "title": task_name,
-                        "description": desc if desc != "nan" else "",
+                        "description": desc,
                     })
 
         return list(features.values())

@@ -20,7 +20,7 @@ class Feature(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 
     project = relationship("Project", back_populates="features")
-    user_stories = relationship("UserStory", back_populates="feature", cascade="all, delete-orphan")
+    user_stories = relationship("UserStory", back_populates="feature", cascade="all, delete-orphan", order_by="UserStory.order")
 
 
 class UserStory(Base):
@@ -37,7 +37,7 @@ class UserStory(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 
     feature = relationship("Feature", back_populates="user_stories")
-    tasks = relationship("Task", back_populates="user_story", cascade="all, delete-orphan")
+    tasks = relationship("Task", back_populates="user_story", cascade="all, delete-orphan", order_by="Task.order")
 
 
 class Task(Base):

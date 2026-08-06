@@ -1,17 +1,21 @@
 import asyncio
+import logging
+import traceback
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.database import get_db
+from app.database import get_db, async_session
 from app.models.project import Project
 from app.models.execution import ExecutionRun
 from app.schemas.execution import ExecutionStartRequest, ExecutionStatusResponse
 from app.services.orchestrator import Orchestrator
 
+logger = logging.getLogger(__name__)
+
 router = APIRouter(prefix="/projects/{project_id}/execute", tags=["execution"])
 
-_active_orchestrators: dict[str, Orchestrator] = {}
+_active_orchestrators: dict[str, bool] = {}
 
 
 @router.post("", response_model=ExecutionStatusResponse)
@@ -24,36 +28,76 @@ async def start_execution(
     if not project:
         raise HTTPException(status_code=404, detail="Project not found")
 
-    if project_id in _active_orchestrators:
+    if _active_orchestrators.get(project_id):
         raise HTTPException(status_code=409, detail="Execution already running for this project")
 
+    # Create execution run in the request session
     orchestrator = Orchestrator(project_id, db)
-    run = await orchestrator.create_run()
-    _active_orchestrators[project_id] = orchestrator
+    execution_run = await orchestrator.create_run()
 
-    asyncio.create_task(_run_orchestrator(project_id, orchestrator))
+    logger.info(f"Starting execution for project {project_id}, run {execution_run.id}, {execution_run.total_tasks} tasks")
 
-    return run
+    # Mark as active and launch background task
+    _active_orchestrators[project_id] = True
+    asyncio.create_task(_run_orchestrator(project_id, execution_run.id))
+
+    return execution_run
 
 
 @router.post("/pause")
 async def pause_execution(project_id: str):
-    orchestrator = _active_orchestrators.get(project_id)
-    if not orchestrator:
+    if not _active_orchestrators.get(project_id):
         raise HTTPException(status_code=404, detail="No active execution")
-    await orchestrator.pause()
+    # TODO: implement pause signal via shared state
+    _active_orchestrators[project_id] = False
     return {"status": "paused"}
 
 
 @router.post("/resume")
 async def resume_execution(project_id: str, db: AsyncSession = Depends(get_db)):
-    orchestrator = _active_orchestrators.get(project_id)
-    if not orchestrator:
-        orchestrator = Orchestrator(project_id, db)
-        _active_orchestrators[project_id] = orchestrator
+    if _active_orchestrators.get(project_id):
+        raise HTTPException(status_code=409, detail="Execution already running")
 
-    asyncio.create_task(_run_orchestrator(project_id, orchestrator))
+    _active_orchestrators[project_id] = True
+    asyncio.create_task(_run_orchestrator(project_id, None))
     return {"status": "resumed"}
+
+
+@router.post("/reset")
+async def reset_execution(project_id: str, db: AsyncSession = Depends(get_db)):
+    from app.models.backlog import Feature, UserStory, Task
+    from sqlalchemy.orm import selectinload
+
+    result = await db.execute(
+        select(Feature)
+        .where(Feature.project_id == project_id)
+        .options(selectinload(Feature.user_stories).selectinload(UserStory.tasks))
+    )
+    features = result.scalars().all()
+    reset_count = 0
+    for f in features:
+        f.status = "pending"
+        for s in f.user_stories:
+            s.status = "pending"
+            for t in s.tasks:
+                t.status = "pending"
+                t.retry_count = 0
+                t.error_message = ""
+                reset_count += 1
+
+    await db.execute(
+        select(ExecutionRun).where(ExecutionRun.project_id == project_id)
+    )
+    # Mark old runs as cancelled
+    runs = (await db.execute(
+        select(ExecutionRun).where(ExecutionRun.project_id == project_id)
+    )).scalars().all()
+    for run in runs:
+        run.status = "cancelled"
+
+    await db.commit()
+    _active_orchestrators.pop(project_id, None)
+    return {"status": "reset", "tasks_reset": reset_count}
 
 
 @router.get("/status", response_model=ExecutionStatusResponse | None)
@@ -70,8 +114,22 @@ async def get_execution_status(project_id: str, db: AsyncSession = Depends(get_d
     return run
 
 
-async def _run_orchestrator(project_id: str, orchestrator: Orchestrator):
+async def _run_orchestrator(project_id: str, run_id: str | None):
+    logger.info(f"Background orchestrator starting for project {project_id}")
     try:
-        await orchestrator.run()
+        async with async_session() as db:
+            orchestrator = Orchestrator(project_id, db)
+
+            # Load existing run if provided
+            if run_id:
+                execution_run = await db.get(ExecutionRun, run_id)
+                if execution_run:
+                    orchestrator.execution_run = execution_run
+
+            await orchestrator.execute()
+            logger.info(f"Background orchestrator completed for project {project_id}")
+    except Exception as e:
+        logger.error(f"Orchestrator failed for project {project_id}: {e}")
+        logger.error(traceback.format_exc())
     finally:
         _active_orchestrators.pop(project_id, None)

@@ -71,6 +71,13 @@ class GitHubService:
                 "state": data["state"],
             }
 
+    def pull_latest(self, repo_path: str, branch: str = "main"):
+        repo = Repo(repo_path)
+        repo.remotes.origin.fetch()
+        if branch in repo.heads:
+            repo.heads[branch].checkout()
+            repo.remotes.origin.pull(branch)
+
     def create_branch(self, repo_path: str, branch_name: str, base_branch: str = "main"):
         repo = Repo(repo_path)
         if branch_name in repo.heads:

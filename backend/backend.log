@@ -1,0 +1,167 @@
+INFO:     Will watch for changes in these directories: ['C:\\Users\\320263643\\OneDrive - Philips\\Documents\\Hackathon\\Code\\backend']
+INFO:     Uvicorn running on http://0.0.0.0:8000 (Press CTRL+C to quit)
+INFO:     Started reloader process [31080] using WatchFiles
+INFO:     Started server process [10804]
+INFO:     Waiting for application startup.
+INFO:     Application startup complete.
+INFO:     ('127.0.0.1', 52833) - "WebSocket /ws/projects/d47d7e94-4c2c-4868-b044-bf27a1781257/progress" [accepted]
+2026-08-06 15:40:38,042 INFO app.services.websocket_manager: WebSocket connected for project d47d7e94-4c2c-4868-b044-bf27a1781257. Total connections: 1
+INFO:     connection open
+INFO:     ('127.0.0.1', 64725) - "WebSocket /ws/projects/d47d7e94-4c2c-4868-b044-bf27a1781257/progress" [accepted]
+2026-08-06 15:40:38,203 INFO app.services.websocket_manager: WebSocket connected for project d47d7e94-4c2c-4868-b044-bf27a1781257. Total connections: 2
+INFO:     connection open
+INFO:     ('127.0.0.1', 62435) - "WebSocket /ws/projects/d47d7e94-4c2c-4868-b044-bf27a1781257/progress" [accepted]
+2026-08-06 15:40:38,846 INFO app.services.websocket_manager: WebSocket connected for project d47d7e94-4c2c-4868-b044-bf27a1781257. Total connections: 3
+INFO:     connection open
+2026-08-06 15:41:07,461 INFO app.api.execution: Starting execution for project d47d7e94-4c2c-4868-b044-bf27a1781257, run 3d232be2-a430-42dc-80e6-1cdafd376be4, 5 tasks
+2026-08-06 15:41:07,462 INFO app.api.execution: Background orchestrator starting for project d47d7e94-4c2c-4868-b044-bf27a1781257
+INFO:     127.0.0.1:58356 - "POST /api/projects/d47d7e94-4c2c-4868-b044-bf27a1781257/execute HTTP/1.1" 200 OK
+2026-08-06 15:41:07,467 INFO app.services.orchestrator: Orchestrator.execute() started for project d47d7e94-4c2c-4868-b044-bf27a1781257
+2026-08-06 15:41:07,469 INFO app.services.orchestrator: Project loaded: Test
+2026-08-06 15:41:07,492 INFO app.services.orchestrator: GitHub service initialized
+2026-08-06 15:41:10,600 INFO app.services.orchestrator: Pulled latest from remote
+2026-08-06 15:41:10,600 INFO app.services.websocket_manager: Broadcasting to 3 client(s): claude_output - Pulled latest changes from remote
+2026-08-06 15:41:10,601 INFO app.services.websocket_manager: Broadcasting to 3 client(s): claude_output - Workspace: C:\Users\320263~1\AppData\Local\Temp\codegen_hub_j4ja6we3\Demo\Demo
+2026-08-06 15:41:10,623 INFO app.services.ci_generator: CI workflow already exists
+2026-08-06 15:41:10,631 INFO app.services.orchestrator: Found 5 pending tasks
+2026-08-06 15:41:10,632 INFO app.services.websocket_manager: Broadcasting to 3 client(s): claude_output - Starting execution: 5 tasks to process
+2026-08-06 15:41:10,647 INFO app.services.websocket_manager: Broadcasting to 3 client(s): task_status_change - Create Prescription database model
+2026-08-06 15:41:10,649 INFO app.services.websocket_manager: Broadcasting to 3 client(s): claude_output - Processing: Create Prescription database model
+2026-08-06 15:41:10,850 INFO app.services.websocket_manager: Broadcasting to 3 client(s): claude_output - On branch: codegen/feature/medical-prescriptions
+2026-08-06 15:41:10,851 INFO app.services.websocket_manager: Broadcasting to 3 client(s): claude_output - Invoking Claude Code CLI for: Create Prescription database model
+2026-08-06 15:41:10,852 INFO app.services.claude_runner: Executing Claude CLI in C:\Users\320263~1\AppData\Local\Temp\codegen_hub_j4ja6we3\Demo\Demo
+2026-08-06 15:41:10,852 INFO app.services.claude_runner: Command: "C:\Users\320263643\AppData\Roaming\npm\node_modules\@anthropic-ai\claude-code\bin\claude.exe" -p --output-format json --dangerously-skip-permissions --allowedTools Bash,Edit,Write,Read,Glob,Grep --max-budget-usd 10.0
+2026-08-06 15:41:10,852 INFO app.services.claude_runner: Prompt length: 1035 chars
+2026-08-06 15:41:38,885 INFO app.services.websocket_manager: WebSocket disconnected for project d47d7e94-4c2c-4868-b044-bf27a1781257
+INFO:     connection closed
+2026-08-06 15:41:38,886 INFO app.services.websocket_manager: WebSocket disconnected for project d47d7e94-4c2c-4868-b044-bf27a1781257
+INFO:     connection closed
+2026-08-06 15:41:38,887 INFO app.services.websocket_manager: WebSocket disconnected for project d47d7e94-4c2c-4868-b044-bf27a1781257
+INFO:     connection closed
+INFO:     127.0.0.1:49816 - "GET /api/projects/d47d7e94-4c2c-4868-b044-bf27a1781257/tests/active HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49815 - "GET /api/projects/d47d7e94-4c2c-4868-b044-bf27a1781257/tests/runs HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49814 - "GET /api/projects/d47d7e94-4c2c-4868-b044-bf27a1781257/backlog HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56699 - "GET /api/projects/d47d7e94-4c2c-4868-b044-bf27a1781257/execute/status HTTP/1.1" 200 OK
+INFO:     ('127.0.0.1', 65121) - "WebSocket /ws/projects/d47d7e94-4c2c-4868-b044-bf27a1781257/progress" [accepted]
+2026-08-06 15:41:39,754 INFO app.services.websocket_manager: WebSocket connected for project d47d7e94-4c2c-4868-b044-bf27a1781257. Total connections: 1
+INFO:     connection open
+INFO:     127.0.0.1:65124 - "GET /api/projects/d47d7e94-4c2c-4868-b044-bf27a1781257/execute/status HTTP/1.1" 200 OK
+INFO:     127.0.0.1:51804 - "GET /api/projects/d47d7e94-4c2c-4868-b044-bf27a1781257/execute/status HTTP/1.1" 200 OK
+2026-08-06 15:42:59,212 INFO app.services.claude_runner: Claude CLI exit code: 0
+2026-08-06 15:42:59,212 INFO app.services.claude_runner: Claude CLI stdout (first 500): {"is_error":false,"duration_api_ms":78963,"num_turns":3,"stop_reason":"end_turn","session_id":"b2e0dc9c-798d-4cbd-9c82-4ee767b37a27","total_cost_usd":0.6935969999999999,"usage":{"input_tokens":20,"cache_creation_input_tokens":52299,"cache_read_input_tokens":23798,"output_tokens":655,"server_tool_use":{"web_search_requests":0,"web_fetch_requests":0},"service_tier":"standard","cache_creation":{"ephemeral_1h_input_tokens":0,"ephemeral_5m_input_tokens":52299},"inference_geo":"","iterations":[],"spee
+2026-08-06 15:42:59,213 WARNING app.services.claude_runner: Claude CLI stderr (first 500): otelHeadersHelper failed (OpenTelemetry export headers unavailable): otelHeadersHelper did not return a valid value
+
+2026-08-06 15:42:59,213 INFO app.services.websocket_manager: Broadcasting to 1 client(s): claude_output - Code generated: Create Prescription database model
+2026-08-06 15:42:59,728 INFO app.services.websocket_manager: Broadcasting to 1 client(s): claude_output - Running tests for: Create Prescription database model
+2026-08-06 15:42:59,728 INFO app.services.websocket_manager: Broadcasting to 1 client(s): test_started - 
+2026-08-06 15:42:59,729 INFO app.services.claude_runner: Executing Claude CLI in C:\Users\320263~1\AppData\Local\Temp\codegen_hub_j4ja6we3\Demo\Demo
+2026-08-06 15:42:59,729 INFO app.services.claude_runner: Command: "C:\Users\320263643\AppData\Roaming\npm\node_modules\@anthropic-ai\claude-code\bin\claude.exe" -p --output-format json --dangerously-skip-permissions --allowedTools Bash,Edit,Write,Read,Glob,Grep --max-budget-usd 10.0
+2026-08-06 15:42:59,729 INFO app.services.claude_runner: Prompt length: 2464 chars
+2026-08-06 15:43:37,158 INFO app.services.claude_runner: Claude CLI exit code: 0
+2026-08-06 15:43:37,158 INFO app.services.claude_runner: Claude CLI stdout (first 500): {"is_error":false,"duration_api_ms":14438,"num_turns":5,"stop_reason":"end_turn","session_id":"7bea9b9c-7426-4376-92a1-159219b638b8","total_cost_usd":0.133936,"usage":{"input_tokens":12,"cache_creation_input_tokens":12488,"cache_read_input_tokens":72492,"output_tokens":527,"server_tool_use":{"web_search_requests":0,"web_fetch_requests":0},"service_tier":"standard","cache_creation":{"ephemeral_1h_input_tokens":0,"ephemeral_5m_input_tokens":12488},"inference_geo":"","iterations":[],"speed":"standa
+2026-08-06 15:43:37,158 WARNING app.services.claude_runner: Claude CLI stderr (first 500): otelHeadersHelper failed (OpenTelemetry export headers unavailable): otelHeadersHelper did not return a valid value
+
+2026-08-06 15:43:37,175 INFO app.services.websocket_manager: Broadcasting to 1 client(s): test_completed - 
+2026-08-06 15:43:37,175 INFO app.services.websocket_manager: Broadcasting to 1 client(s): task_status_change - Create Prescription database model
+2026-08-06 15:43:37,176 INFO app.services.websocket_manager: Broadcasting to 1 client(s): claude_output - All tests passed (23/23, 0% coverage): Create Prescription database model
+2026-08-06 15:43:41,024 INFO app.services.websocket_manager: Broadcasting to 1 client(s): claude_output - Pushed changes to codegen/feature/medical-prescriptions
+2026-08-06 15:43:41,059 INFO app.services.websocket_manager: Broadcasting to 1 client(s): task_status_change - Build POST /api/prescriptions endpoint
+2026-08-06 15:43:41,060 INFO app.services.websocket_manager: Broadcasting to 1 client(s): claude_output - Processing: Build POST /api/prescriptions endpoint
+2026-08-06 15:43:41,060 INFO app.services.websocket_manager: Broadcasting to 1 client(s): claude_output - Invoking Claude Code CLI for: Build POST /api/prescriptions endpoint
+2026-08-06 15:43:41,061 INFO app.services.claude_runner: Executing Claude CLI in C:\Users\320263~1\AppData\Local\Temp\codegen_hub_j4ja6we3\Demo\Demo
+2026-08-06 15:43:41,061 INFO app.services.claude_runner: Command: "C:\Users\320263643\AppData\Roaming\npm\node_modules\@anthropic-ai\claude-code\bin\claude.exe" -p --output-format json --dangerously-skip-permissions --allowedTools Bash,Edit,Write,Read,Glob,Grep --max-budget-usd 10.0
+2026-08-06 15:43:41,061 INFO app.services.claude_runner: Prompt length: 1009 chars
+INFO:     127.0.0.1:58862 - "GET /api/projects/d47d7e94-4c2c-4868-b044-bf27a1781257/execute/status HTTP/1.1" 200 OK
+2026-08-06 15:46:14,104 INFO app.services.claude_runner: Claude CLI exit code: 0
+2026-08-06 15:46:14,104 INFO app.services.claude_runner: Claude CLI stdout (first 500): {"is_error":false,"duration_api_ms":130591,"num_turns":9,"stop_reason":"end_turn","session_id":"d4d57718-5d0c-4c99-a4e8-745719aa28a3","total_cost_usd":0.88755975,"usage":{"input_tokens":22,"cache_creation_input_tokens":30543,"cache_read_input_tokens":114372,"output_tokens":1379,"server_tool_use":{"web_search_requests":0,"web_fetch_requests":0},"service_tier":"standard","cache_creation":{"ephemeral_1h_input_tokens":0,"ephemeral_5m_input_tokens":30543},"inference_geo":"","iterations":[],"speed":"s
+2026-08-06 15:46:14,104 WARNING app.services.claude_runner: Claude CLI stderr (first 500): otelHeadersHelper failed (OpenTelemetry export headers unavailable): otelHeadersHelper did not return a valid value
+
+2026-08-06 15:46:14,105 INFO app.services.websocket_manager: Broadcasting to 1 client(s): claude_output - Code generated: Build POST /api/prescriptions endpoint
+2026-08-06 15:46:14,380 INFO app.services.websocket_manager: Broadcasting to 1 client(s): claude_output - Running tests for: Build POST /api/prescriptions endpoint
+2026-08-06 15:46:14,381 INFO app.services.websocket_manager: Broadcasting to 1 client(s): test_started - 
+2026-08-06 15:46:14,382 INFO app.services.claude_runner: Executing Claude CLI in C:\Users\320263~1\AppData\Local\Temp\codegen_hub_j4ja6we3\Demo\Demo
+2026-08-06 15:46:14,382 INFO app.services.claude_runner: Command: "C:\Users\320263643\AppData\Roaming\npm\node_modules\@anthropic-ai\claude-code\bin\claude.exe" -p --output-format json --dangerously-skip-permissions --allowedTools Bash,Edit,Write,Read,Glob,Grep --max-budget-usd 10.0
+2026-08-06 15:46:14,382 INFO app.services.claude_runner: Prompt length: 1312 chars
+INFO:     127.0.0.1:63404 - "GET /api/projects/d47d7e94-4c2c-4868-b044-bf27a1781257/execute/status HTTP/1.1" 200 OK
+INFO:     127.0.0.1:50816 - "GET /api/projects/d47d7e94-4c2c-4868-b044-bf27a1781257/execute/status HTTP/1.1" 200 OK
+INFO:     127.0.0.1:59705 - "GET /api/projects/d47d7e94-4c2c-4868-b044-bf27a1781257/tests/runs HTTP/1.1" 200 OK
+2026-08-06 15:50:56,498 INFO app.services.claude_runner: Claude CLI exit code: 0
+2026-08-06 15:50:56,498 INFO app.services.claude_runner: Claude CLI stdout (first 500): {"is_error":false,"duration_api_ms":182869,"num_turns":21,"stop_reason":"end_turn","session_id":"c5731b6d-9833-460f-af74-bbc6d74a9c9a","total_cost_usd":1.0249814999999998,"usage":{"input_tokens":34,"cache_creation_input_tokens":38633,"cache_read_input_tokens":616247,"output_tokens":7946,"server_tool_use":{"web_search_requests":0,"web_fetch_requests":0},"service_tier":"standard","cache_creation":{"ephemeral_1h_input_tokens":0,"ephemeral_5m_input_tokens":38633},"inference_geo":"","iterations":[],"
+2026-08-06 15:50:56,499 WARNING app.services.claude_runner: Claude CLI stderr (first 500): otelHeadersHelper failed (OpenTelemetry export headers unavailable): otelHeadersHelper did not return a valid value
+
+2026-08-06 15:50:56,520 INFO app.services.websocket_manager: Broadcasting to 1 client(s): test_completed - 
+2026-08-06 15:50:56,521 INFO app.services.websocket_manager: Broadcasting to 1 client(s): task_status_change - Build POST /api/prescriptions endpoint
+2026-08-06 15:50:56,521 INFO app.services.websocket_manager: Broadcasting to 1 client(s): claude_output - All tests passed (29/29, 0% coverage): Build POST /api/prescriptions endpoint
+2026-08-06 15:51:00,756 INFO app.services.websocket_manager: Broadcasting to 1 client(s): claude_output - Pushed changes to codegen/feature/medical-prescriptions
+2026-08-06 15:51:00,822 INFO app.services.websocket_manager: Broadcasting to 1 client(s): task_status_change - Create prescription form Vue component
+2026-08-06 15:51:00,822 INFO app.services.websocket_manager: Broadcasting to 1 client(s): claude_output - Processing: Create prescription form Vue component
+2026-08-06 15:51:00,822 INFO app.services.websocket_manager: Broadcasting to 1 client(s): claude_output - Invoking Claude Code CLI for: Create prescription form Vue component
+2026-08-06 15:51:00,823 INFO app.services.claude_runner: Executing Claude CLI in C:\Users\320263~1\AppData\Local\Temp\codegen_hub_j4ja6we3\Demo\Demo
+2026-08-06 15:51:00,823 INFO app.services.claude_runner: Command: "C:\Users\320263643\AppData\Roaming\npm\node_modules\@anthropic-ai\claude-code\bin\claude.exe" -p --output-format json --dangerously-skip-permissions --allowedTools Bash,Edit,Write,Read,Glob,Grep --max-budget-usd 10.0
+2026-08-06 15:51:00,823 INFO app.services.claude_runner: Prompt length: 1010 chars
+INFO:     127.0.0.1:52797 - "GET /api/projects/d47d7e94-4c2c-4868-b044-bf27a1781257/execute/status HTTP/1.1" 200 OK
+INFO:     127.0.0.1:51539 - "GET /api/projects/d47d7e94-4c2c-4868-b044-bf27a1781257/tests/runs HTTP/1.1" 200 OK
+INFO:     127.0.0.1:60063 - "GET /api/projects/d47d7e94-4c2c-4868-b044-bf27a1781257/tests/runs HTTP/1.1" 200 OK
+2026-08-06 15:53:35,983 INFO app.services.claude_runner: Claude CLI exit code: 0
+2026-08-06 15:53:35,984 INFO app.services.claude_runner: Claude CLI stdout (first 500): {"is_error":false,"duration_api_ms":131537,"num_turns":3,"stop_reason":"end_turn","session_id":"ec407530-6cf9-4ddd-82cd-ee74254661d9","total_cost_usd":1.2553765,"usage":{"input_tokens":20,"cache_creation_input_tokens":32455,"cache_read_input_tokens":53520,"output_tokens":714,"server_tool_use":{"web_search_requests":0,"web_fetch_requests":0},"service_tier":"standard","cache_creation":{"ephemeral_1h_input_tokens":0,"ephemeral_5m_input_tokens":32455},"inference_geo":"","iterations":[],"speed":"stan
+2026-08-06 15:53:35,984 WARNING app.services.claude_runner: Claude CLI stderr (first 500): otelHeadersHelper failed (OpenTelemetry export headers unavailable): otelHeadersHelper did not return a valid value
+
+2026-08-06 15:53:35,984 INFO app.services.websocket_manager: Broadcasting to 1 client(s): claude_output - Code generated: Create prescription form Vue component
+2026-08-06 15:53:36,446 INFO app.services.websocket_manager: Broadcasting to 1 client(s): claude_output - Running tests for: Create prescription form Vue component
+2026-08-06 15:53:36,446 INFO app.services.websocket_manager: Broadcasting to 1 client(s): test_started - 
+2026-08-06 15:53:36,448 INFO app.services.claude_runner: Executing Claude CLI in C:\Users\320263~1\AppData\Local\Temp\codegen_hub_j4ja6we3\Demo\Demo
+2026-08-06 15:53:36,448 INFO app.services.claude_runner: Command: "C:\Users\320263643\AppData\Roaming\npm\node_modules\@anthropic-ai\claude-code\bin\claude.exe" -p --output-format json --dangerously-skip-permissions --allowedTools Bash,Edit,Write,Read,Glob,Grep --max-budget-usd 10.0
+2026-08-06 15:53:36,448 INFO app.services.claude_runner: Prompt length: 1313 chars
+INFO:     127.0.0.1:64137 - "GET /api/projects/d47d7e94-4c2c-4868-b044-bf27a1781257/execute/status HTTP/1.1" 200 OK
+INFO:     127.0.0.1:60766 - "GET /api/projects/d47d7e94-4c2c-4868-b044-bf27a1781257/tests/runs HTTP/1.1" 200 OK
+2026-08-06 15:56:58,401 INFO app.services.claude_runner: Claude CLI exit code: 0
+2026-08-06 15:56:58,401 INFO app.services.claude_runner: Claude CLI stdout (first 500): {"is_error":false,"duration_api_ms":156217,"num_turns":32,"stop_reason":"end_turn","session_id":"e41a43ad-d977-479b-b993-b21e48b58b80","total_cost_usd":1.1147795000000003,"usage":{"input_tokens":113,"cache_creation_input_tokens":50588,"cache_read_input_tokens":1002065,"output_tokens":9322,"server_tool_use":{"web_search_requests":0,"web_fetch_requests":0},"service_tier":"standard","cache_creation":{"ephemeral_1h_input_tokens":0,"ephemeral_5m_input_tokens":50588},"inference_geo":"","iterations":[]
+2026-08-06 15:56:58,401 WARNING app.services.claude_runner: Claude CLI stderr (first 500): otelHeadersHelper failed (OpenTelemetry export headers unavailable): otelHeadersHelper did not return a valid value
+
+2026-08-06 15:56:58,419 INFO app.services.websocket_manager: Broadcasting to 1 client(s): test_completed - 
+2026-08-06 15:56:58,420 INFO app.services.websocket_manager: Broadcasting to 1 client(s): task_status_change - Create prescription form Vue component
+2026-08-06 15:56:58,420 INFO app.services.websocket_manager: Broadcasting to 1 client(s): claude_output - All tests passed (85/85, 0% coverage): Create prescription form Vue component
+2026-08-06 15:57:03,104 INFO app.services.websocket_manager: Broadcasting to 1 client(s): claude_output - Pushed changes to codegen/feature/medical-prescriptions
+2026-08-06 15:57:03,200 INFO app.services.websocket_manager: Broadcasting to 1 client(s): test_started - 
+2026-08-06 15:57:03,201 INFO app.services.websocket_manager: Broadcasting to 1 client(s): claude_output - Running integration tests for story: Create Prescription
+2026-08-06 15:57:03,202 INFO app.services.claude_runner: Executing Claude CLI in C:\Users\320263~1\AppData\Local\Temp\codegen_hub_j4ja6we3\Demo\Demo
+2026-08-06 15:57:03,202 INFO app.services.claude_runner: Command: "C:\Users\320263643\AppData\Roaming\npm\node_modules\@anthropic-ai\claude-code\bin\claude.exe" -p --output-format json --dangerously-skip-permissions --allowedTools Bash,Edit,Write,Read,Glob,Grep --max-budget-usd 10.0
+2026-08-06 15:57:03,202 INFO app.services.claude_runner: Prompt length: 1027 chars
+INFO:     127.0.0.1:52917 - "GET /api/projects/d47d7e94-4c2c-4868-b044-bf27a1781257/tests/runs HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55938 - "GET /api/projects/d47d7e94-4c2c-4868-b044-bf27a1781257/execute/status HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53183 - "GET /api/projects/d47d7e94-4c2c-4868-b044-bf27a1781257/execute/status HTTP/1.1" 200 OK
+2026-08-06 16:01:29,372 INFO app.services.claude_runner: Claude CLI exit code: 0
+2026-08-06 16:01:29,372 INFO app.services.claude_runner: Claude CLI stdout (first 500): {"is_error":false,"duration_api_ms":221326,"num_turns":15,"stop_reason":"end_turn","session_id":"d927e843-6cd1-4772-a3fd-d3cb8291f876","total_cost_usd":1.5520744999999996,"usage":{"input_tokens":595,"cache_creation_input_tokens":64146,"cache_read_input_tokens":381240,"output_tokens":7126,"server_tool_use":{"web_search_requests":0,"web_fetch_requests":0},"service_tier":"standard","cache_creation":{"ephemeral_1h_input_tokens":0,"ephemeral_5m_input_tokens":64146},"inference_geo":"","iterations":[],
+2026-08-06 16:01:29,372 WARNING app.services.claude_runner: Claude CLI stderr (first 500): otelHeadersHelper failed (OpenTelemetry export headers unavailable): otelHeadersHelper did not return a valid value
+
+2026-08-06 16:01:29,387 INFO app.services.websocket_manager: Broadcasting to 1 client(s): test_completed - 
+2026-08-06 16:01:29,404 INFO app.services.websocket_manager: Broadcasting to 1 client(s): task_status_change - Create GET /api/patients/{id}/prescriptions endpoint
+2026-08-06 16:01:29,404 INFO app.services.websocket_manager: Broadcasting to 1 client(s): claude_output - Processing: Create GET /api/patients/{id}/prescriptions endpoint
+2026-08-06 16:01:29,404 INFO app.services.websocket_manager: Broadcasting to 1 client(s): claude_output - Invoking Claude Code CLI for: Create GET /api/patients/{id}/prescriptions endpoi
+2026-08-06 16:01:29,405 INFO app.services.claude_runner: Executing Claude CLI in C:\Users\320263~1\AppData\Local\Temp\codegen_hub_j4ja6we3\Demo\Demo
+2026-08-06 16:01:29,405 INFO app.services.claude_runner: Command: "C:\Users\320263643\AppData\Roaming\npm\node_modules\@anthropic-ai\claude-code\bin\claude.exe" -p --output-format json --dangerously-skip-permissions --allowedTools Bash,Edit,Write,Read,Glob,Grep --max-budget-usd 10.0
+2026-08-06 16:01:29,405 INFO app.services.claude_runner: Prompt length: 950 chars
+INFO:     127.0.0.1:49678 - "GET /api/projects/d47d7e94-4c2c-4868-b044-bf27a1781257/tests/active HTTP/1.1" 200 OK
+INFO:     127.0.0.1:49677 - "GET /api/projects/d47d7e94-4c2c-4868-b044-bf27a1781257/tests/runs HTTP/1.1" 200 OK
+INFO:     127.0.0.1:54642 - "GET /api/projects/d47d7e94-4c2c-4868-b044-bf27a1781257/execute/status HTTP/1.1" 200 OK
+2026-08-06 16:05:29,557 INFO app.services.claude_runner: Claude CLI exit code: 1
+2026-08-06 16:05:29,557 INFO app.services.claude_runner: Claude CLI stdout (first 500): {"is_error":true,"duration_api_ms":0,"num_turns":1,"stop_reason":"stop_sequence","session_id":"51aa37b7-c667-48ca-8b78-b7e72c4345e3","total_cost_usd":0,"usage":{"input_tokens":0,"cache_creation_input_tokens":0,"cache_read_input_tokens":0,"output_tokens":0,"server_tool_use":{"web_search_requests":0,"web_fetch_requests":0},"service_tier":"standard","cache_creation":{"ephemeral_1h_input_tokens":0,"ephemeral_5m_input_tokens":0},"inference_geo":"","iterations":[],"speed":"standard"},"modelUsage":{},"
+2026-08-06 16:05:29,557 WARNING app.services.claude_runner: Claude CLI stderr (first 500): otelHeadersHelper failed (OpenTelemetry export headers unavailable): otelHeadersHelper did not return a valid value
+
+2026-08-06 16:05:29,558 INFO app.services.websocket_manager: Broadcasting to 1 client(s): claude_output - Failed: Create GET /api/patients/{id}/prescriptions endpoint - otelHeadersHelper
+2026-08-06 16:05:29,559 INFO app.services.websocket_manager: Broadcasting to 1 client(s): task_status_change - Create GET /api/patients/{id}/prescriptions endpoint
+2026-08-06 16:05:29,613 INFO app.services.websocket_manager: Broadcasting to 1 client(s): task_status_change - Build prescription history list component
+2026-08-06 16:05:29,614 INFO app.services.websocket_manager: Broadcasting to 1 client(s): claude_output - Processing: Build prescription history list component
+2026-08-06 16:05:29,614 INFO app.services.websocket_manager: Broadcasting to 1 client(s): claude_output - Invoking Claude Code CLI for: Build prescription history list component
+2026-08-06 16:05:29,616 INFO app.services.claude_runner: Executing Claude CLI in C:\Users\320263~1\AppData\Local\Temp\codegen_hub_j4ja6we3\Demo\Demo
+2026-08-06 16:05:29,616 INFO app.services.claude_runner: Command: "C:\Users\320263643\AppData\Roaming\npm\node_modules\@anthropic-ai\claude-code\bin\claude.exe" -p --output-format json --dangerously-skip-permissions --allowedTools Bash,Edit,Write,Read,Glob,Grep --max-budget-usd 10.0
+2026-08-06 16:05:29,616 INFO app.services.claude_runner: Prompt length: 950 chars
+2026-08-06 16:09:46,889 INFO app.services.claude_runner: Claude CLI exit code: 1
+2026-08-06 16:09:46,889 INFO app.services.claude_runner: Claude CLI stdout (first 500): {"is_error":true,"duration_api_ms":0,"num_turns":1,"stop_reason":"stop_sequence","session_id":"6eb314ba-5ebb-45a9-b78e-503034ce5812","total_cost_usd":0,"usage":{"input_tokens":0,"cache_creation_input_tokens":0,"cache_read_input_tokens":0,"output_tokens":0,"server_tool_use":{"web_search_requests":0,"web_fetch_requests":0},"service_tier":"standard","cache_creation":{"ephemeral_1h_input_tokens":0,"ephemeral_5m_input_tokens":0},"inference_geo":"","iterations":[],"speed":"standard"},"modelUsage":{},"
+2026-08-06 16:09:46,890 WARNING app.services.claude_runner: Claude CLI stderr (first 500): otelHeadersHelper failed (OpenTelemetry export headers unavailable): otelHeadersHelper did not return a valid value
+
+2026-08-06 16:09:46,890 INFO app.services.websocket_manager: Broadcasting to 1 client(s): claude_output - Failed: Build prescription history list component - otelHeadersHelper failed (Op
+2026-08-06 16:09:46,891 INFO app.services.websocket_manager: Broadcasting to 1 client(s): task_status_change - Build prescription history list component
+2026-08-06 16:09:46,915 INFO app.services.websocket_manager: Broadcasting to 1 client(s): execution_complete - 
+2026-08-06 16:09:46,915 INFO app.api.execution: Background orchestrator completed for project d47d7e94-4c2c-4868-b044-bf27a1781257
+INFO:     127.0.0.1:58052 - "GET /api/projects/d47d7e94-4c2c-4868-b044-bf27a1781257/tests/runs HTTP/1.1" 200 OK
