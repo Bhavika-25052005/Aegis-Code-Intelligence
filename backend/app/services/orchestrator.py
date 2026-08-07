@@ -1,4 +1,5 @@
 import asyncio
+import json
 import logging
 from datetime import datetime
 
@@ -13,6 +14,7 @@ from app.services.claude_runner import ClaudeRunner, ClaudeResult
 from app.services.crypto import decrypt_value
 from app.services.github_service import GitHubService
 from app.services.prompt_builder import PromptBuilder
+from app.services.repository_intelligence import RepositoryIntelligence
 from app.services.test_runner import TestRunnerService
 from app.services.websocket_manager import manager as ws_manager
 from app.config import settings
@@ -21,9 +23,17 @@ logger = logging.getLogger(__name__)
 
 
 class Orchestrator:
-    def __init__(self, project_id: str, db: AsyncSession):
+    def __init__(
+        self,
+        project_id: str,
+        db: AsyncSession,
+        skip_tests: bool = False,
+        story_id: str | None = None,
+    ):
         self.project_id = project_id
         self.db = db
+        self.skip_tests = skip_tests
+        self.story_id = story_id
         self.execution_run: ExecutionRun | None = None
         self._paused = False
         self._cancelled = False
@@ -143,6 +153,43 @@ class Orchestrator:
                 break
 
             task, user_story, feature = task_data
+
+            # Day 2 approval gate
+            if user_story.requirement_analysis_status != "approved":
+                await self._broadcast(
+                    "error",
+                    {"message": (
+                        "Execution blocked: Requirement Intelligence is not approved "
+                        f"for '{user_story.title}'."
+                    )},
+                )
+                break
+
+            if user_story.implementation_plan_status != "approved":
+                await self._broadcast(
+                    "error",
+                    {"message": (
+                        "Execution blocked: Implementation Plan is not approved "
+                        f"for '{user_story.title}'."
+                    )},
+                )
+                break
+
+            # Day 2 dependency gate
+            dependencies_ok, reason = self._dependency_state(task, user_story)
+            if not dependencies_ok:
+                task.status = "blocked"
+                task.error_message = reason
+                if self.execution_run:
+                    self.execution_run.failed_tasks += 1
+                await self.db.commit()
+                await self._broadcast_task_status(task.id, "blocked", task.title)
+                await self._broadcast(
+                    "claude_output",
+                    {"message": f"Blocked: {task.title}. {reason}"},
+                )
+                continue
+
             await self._process_task(task, user_story, feature, project, github, workspace)
 
             # Run integration tests at story boundary + mark story/feature complete
@@ -163,13 +210,14 @@ class Orchestrator:
                         feature.status = "completed"
                         await self.db.commit()
 
-                    test_runner = TestRunnerService(
-                        self.project_id, self.db, workspace, project.claude_max_budget_usd
-                    )
-                    await test_runner.run_integration_tests(
-                        user_story, feature,
-                        self.execution_run.id if self.execution_run else None,
-                    )
+                    if not self.skip_tests:
+                        test_runner = TestRunnerService(
+                            self.project_id, self.db, workspace, project.claude_max_budget_usd
+                        )
+                        await test_runner.run_integration_tests(
+                            user_story, feature,
+                            self.execution_run.id if self.execution_run else None,
+                        )
 
             # Create PR at scope boundaries
             if github and task.status == "completed":
@@ -224,8 +272,36 @@ class Orchestrator:
                     logger.warning(f"Branch creation failed: {e}")
                     await self._broadcast("claude_output", {"message": f"Branch creation skipped: {e}"})
 
-        # Build prompt and run Claude
-        prompt = self.prompt_builder.build_task_prompt(task, user_story, feature)
+        # Build prompt with Day 2 requirement + plan context
+        requirement = self._load_json_object(user_story.requirement_analysis)
+        plan = self._load_json_object(user_story.implementation_plan)
+
+        relevant_paths = []
+        for item in plan.get("relevant_files", []):
+            path = item.get("path")
+            if path and path not in relevant_paths:
+                relevant_paths.append(path)
+        for item in plan.get("planned_changes", []):
+            path = item.get("path")
+            if path and path not in relevant_paths:
+                relevant_paths.append(path)
+
+        repo_context = ""
+        if relevant_paths:
+            repo_context = (
+                "Repository Intelligence identified these relevant paths. "
+                "Read only what this task needs:\n"
+                + "\n".join(f"- {path}" for path in relevant_paths[:15])
+            )
+
+        prompt = self.prompt_builder.build_task_prompt(
+            task,
+            user_story,
+            feature,
+            repo_context=repo_context,
+            requirement_analysis=requirement if requirement else None,
+            implementation_plan=plan if plan else None,
+        )
         runner = ClaudeRunner(workspace or ".", project.claude_max_budget_usd)
         self._current_runner = runner
 
@@ -236,42 +312,61 @@ class Orchestrator:
             task.claude_session_id = result.session_id
             await self._broadcast("claude_output", {"message": f"Code generated: {task.title}"})
 
-            # TEST PHASE — run tests and fix loop
+            # TEST PHASE — skip entirely when skip_tests=True
             modified_files = self._get_modified_files(workspace)
-            test_runner = TestRunnerService(
-                self.project_id, self.db, workspace, project.claude_max_budget_usd
-            )
 
-            await self._broadcast("claude_output", {"message": f"Running tests for: {task.title}"})
-            test_result = await test_runner.run_unit_tests(
-                task,
-                self.execution_run.id if self.execution_run else None,
-                modified_files,
-            )
-
-            if not test_result.passed:
-                await self._broadcast("claude_output", {
-                    "message": f"Tests failed ({test_result.failed_tests} failures). Entering fix loop...",
-                })
-                test_result = await test_runner.fix_and_retest(
-                    task,
-                    self.execution_run.id if self.execution_run else None,
-                    test_result,
-                    modified_files,
-                )
-
-            if test_result.passed:
+            if self.skip_tests:
+                await self._broadcast("claude_output", {"message": f"Tests skipped (code-only mode): {task.title}"})
                 task.status = "completed"
                 task.completed_at = datetime.utcnow()
                 if self.execution_run:
                     self.execution_run.completed_tasks += 1
-
                 await self._broadcast_task_status(task.id, "completed", task.title)
-                await self._broadcast("claude_output", {
-                    "message": f"All tests passed ({test_result.passed_tests}/{test_result.total_tests}, {(test_result.coverage_percentage or 0):.0f}% coverage): {task.title}",
-                })
+                await self._broadcast("claude_output", {"message": f"Code generated (no tests): {task.title}"})
+            else:
+                test_runner = TestRunnerService(
+                    self.project_id, self.db, workspace, project.claude_max_budget_usd
+                )
 
-                # Commit changes (stay on current branch)
+                await self._broadcast("claude_output", {"message": f"Running tests for: {task.title}"})
+                test_result = await test_runner.run_unit_tests(
+                    task,
+                    self.execution_run.id if self.execution_run else None,
+                    modified_files,
+                )
+
+                if not test_result.passed:
+                    await self._broadcast("claude_output", {
+                        "message": f"Tests failed ({test_result.failed_tests} failures). Entering fix loop...",
+                    })
+                    test_result = await test_runner.fix_and_retest(
+                        task,
+                        self.execution_run.id if self.execution_run else None,
+                        test_result,
+                        modified_files,
+                    )
+
+                if test_result.passed:
+                    task.status = "completed"
+                    task.completed_at = datetime.utcnow()
+                    if self.execution_run:
+                        self.execution_run.completed_tasks += 1
+                    await self._broadcast_task_status(task.id, "completed", task.title)
+                    await self._broadcast("claude_output", {
+                        "message": f"All tests passed ({test_result.passed_tests}/{test_result.total_tests}, {(test_result.coverage_percentage or 0):.0f}% coverage): {task.title}",
+                    })
+                else:
+                    await self._broadcast("claude_output", {
+                        "message": f"Tests still failing after fixes. Marking task failed: {task.title}",
+                    })
+                    task.status = "failed"
+                    task.error_message = f"Tests failed: {test_result.error_summary[:500]}"
+                    if self.execution_run:
+                        self.execution_run.failed_tasks += 1
+                    await self._broadcast_task_status(task.id, "failed", task.title)
+
+            # Commit changes when task completed (both test and code-only modes)
+            if task.status == "completed":
                 if github and workspace and self._current_branch:
                     try:
                         if github.has_changes(workspace):
@@ -280,15 +375,17 @@ class Orchestrator:
                     except Exception as e:
                         logger.warning(f"Git push failed: {e}")
                         await self._broadcast("claude_output", {"message": f"Git push skipped: {e}"})
-            else:
-                await self._broadcast("claude_output", {
-                    "message": f"Tests still failing after fixes. Marking task failed: {task.title}",
-                })
-                task.status = "failed"
-                task.error_message = f"Tests failed: {test_result.error_summary[:500]}"
-                if self.execution_run:
-                    self.execution_run.failed_tasks += 1
-                await self._broadcast_task_status(task.id, "failed", task.title)
+
+                # Day 2: refresh repository metadata after task
+                try:
+                    repository = RepositoryIntelligence(
+                        project=project,
+                        db=self.db,
+                        workspace_path=workspace,
+                    )
+                    await repository.refresh_after_task(modified_files)
+                except Exception as exc:
+                    logger.warning("Repository metadata refresh failed: %s", exc)
 
         elif result.is_partial:
             await self._broadcast("claude_output", {"message": f"Partial result for: {task.title}. Retrying..."})
@@ -449,22 +546,81 @@ class Orchestrator:
     async def _broadcast(self, event_type: str, payload: dict):
         await ws_manager.broadcast(self.project_id, {"type": event_type, "payload": payload})
 
+    @staticmethod
+    def _load_json_object(value: str) -> dict:
+        if not value:
+            return {}
+        try:
+            parsed = json.loads(value)
+            return parsed if isinstance(parsed, dict) else {}
+        except json.JSONDecodeError:
+            return {}
+
     async def _get_ordered_tasks(self) -> list[tuple[Task, UserStory, Feature]]:
         result = await self.db.execute(
             select(Feature)
             .where(Feature.project_id == self.project_id)
-            .options(selectinload(Feature.user_stories).selectinload(UserStory.tasks))
+            .options(
+                selectinload(Feature.user_stories).selectinload(UserStory.tasks)
+            )
             .order_by(Feature.order)
         )
         features = result.scalars().all()
 
-        tasks = []
+        ordered = []
         for feature in features:
-            for story in sorted(feature.user_stories, key=lambda s: s.order):
-                for task in sorted(story.tasks, key=lambda t: t.order):
-                    if task.status in ("pending", "in_progress"):
-                        tasks.append((task, story, feature))
-        return tasks
+            for story in sorted(feature.user_stories, key=lambda item: item.order):
+                # When a story_id filter is set, only process that story
+                if self.story_id and story.id != self.story_id:
+                    continue
+                plan = self._load_json_object(story.implementation_plan)
+                order_map = {
+                    item.get("task_id"): item.get("execution_order", 999999)
+                    for item in plan.get("task_plan", [])
+                }
+                story_tasks = sorted(
+                    story.tasks,
+                    key=lambda task: (
+                        order_map.get(task.id, 999999),
+                        task.order,
+                    ),
+                )
+                for task in story_tasks:
+                    if task.status in {"pending", "in_progress"}:
+                        ordered.append((task, story, feature))
+        return ordered
+
+    def _dependency_state(
+        self,
+        task: Task,
+        story: UserStory,
+    ) -> tuple[bool, str]:
+        plan = self._load_json_object(story.implementation_plan)
+        entry = next(
+            (
+                item
+                for item in plan.get("task_plan", [])
+                if item.get("task_id") == task.id
+            ),
+            None,
+        )
+        if not entry:
+            return True, ""
+
+        dependencies = entry.get("depends_on", [])
+        if not dependencies:
+            return True, ""
+
+        by_id = {item.id: item for item in story.tasks}
+        for dependency_id in dependencies:
+            dependency = by_id.get(dependency_id)
+            if not dependency:
+                return False, f"Unknown dependency {dependency_id}"
+            if dependency.status in {"failed", "blocked"}:
+                return False, f"Dependency failed: {dependency.title}"
+            if dependency.status != "completed":
+                return False, f"Dependency not completed: {dependency.title}"
+        return True, ""
 
     async def _count_pending_tasks(self) -> int:
         tasks = await self._get_ordered_tasks()

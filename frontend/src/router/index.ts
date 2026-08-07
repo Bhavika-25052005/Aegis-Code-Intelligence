@@ -19,6 +19,16 @@ const router = createRouter({
       component: () => import('../views/BacklogView.vue'),
     },
     {
+      path: '/projects/:id/requirements/:storyId',
+      name: 'requirement-analysis',
+      component: () => import('../views/RequirementAnalysisView.vue'),
+    },
+    {
+      path: '/projects/:id/implementation/:storyId',
+      name: 'implementation-plan',
+      component: () => import('../views/ImplementationPlanView.vue'),
+    },
+    {
       path: '/projects/:id/execute',
       name: 'execution',
       component: () => import('../views/ExecutionView.vue'),

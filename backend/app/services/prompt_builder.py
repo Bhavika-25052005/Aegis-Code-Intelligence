@@ -8,6 +8,8 @@ class PromptBuilder:
         user_story: UserStory,
         feature: Feature,
         repo_context: str = "",
+        requirement_analysis: dict | None = None,
+        implementation_plan: dict | None = None,
     ) -> str:
         sections = []
 
@@ -26,6 +28,68 @@ class PromptBuilder:
         if task.description:
             sections.append(f"{task.description}")
 
+        # Day 2 — Approved Requirement Contract
+        if requirement_analysis:
+            sections.append("\n# APPROVED REQUIREMENT CONTRACT")
+            summary = requirement_analysis.get("summary", "")
+            if summary:
+                sections.append(f"\n## Requirement Summary\n{summary}")
+            for heading, key in [
+                ("Acceptance Criteria", "acceptance_criteria"),
+                ("Functional Rules", "functional_rules"),
+                ("Edge Cases", "edge_cases"),
+                ("Assumptions", "assumptions"),
+                ("Dependencies", "dependencies"),
+                ("Known Risks", "risks"),
+            ]:
+                values = requirement_analysis.get(key, [])
+                if values:
+                    sections.append(
+                        f"\n## {heading}\n"
+                        + "\n".join(f"- {item}" for item in values)
+                    )
+
+        # Day 2 — Approved Implementation Plan
+        if implementation_plan:
+            sections.append("\n# APPROVED IMPLEMENTATION PLAN")
+            sections.append(
+                "\n## Plan Summary\n"
+                + implementation_plan.get("work_summary", "")
+            )
+            matching = [
+                item
+                for item in implementation_plan.get("task_plan", [])
+                if item.get("task_id") == task.id
+            ]
+            if matching:
+                item = matching[0]
+                sections.append(
+                    "\n## Current Task Execution Order\n"
+                    + str(item.get("execution_order", ""))
+                )
+                sections.append(
+                    "\n## Current Task Approach\n"
+                    + item.get("approach", "")
+                )
+                files = item.get("related_files", [])
+                if files:
+                    sections.append(
+                        "\n## Related Files\n"
+                        + "\n".join(f"- {path}" for path in files)
+                    )
+            changes = implementation_plan.get("planned_changes", [])
+            if changes:
+                sections.append("\n## Planned Repository Changes")
+                for change in changes:
+                    sections.append(
+                        "- "
+                        + change.get("action", "inspect").upper()
+                        + " "
+                        + change.get("path", "")
+                        + ": "
+                        + change.get("purpose", "")
+                    )
+
         sections.append("\n## Instructions")
         sections.append(
             "Implement the task described above. Follow these guidelines:\n"
@@ -38,6 +102,20 @@ class PromptBuilder:
 
         if repo_context:
             sections.append(f"\n## Repository Context\n{repo_context}")
+
+        # Day 2 implementation rules
+        sections.append(
+            "# AEGIS DAY 2 IMPLEMENTATION RULES\n"
+            "- The approved Requirement Contract is authoritative.\n"
+            "- Follow the approved Implementation Plan.\n"
+            "- Implement only the current imported task.\n"
+            "- Inspect existing code before creating replacements.\n"
+            "- Reuse existing modules when appropriate.\n"
+            "- Do not modify unrelated files.\n"
+            "- Preserve architecture and naming conventions.\n"
+            "- Implement approved validation and edge cases.\n"
+            "- Do not weaken acceptance criteria or existing tests."
+        )
 
         return "\n".join(sections)
 

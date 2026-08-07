@@ -8,12 +8,20 @@ export const useExecutionStore = defineStore('execution', () => {
   const logs = ref<string[]>([])
   const loading = ref(false)
 
-  async function startExecution(projectId: string) {
+  async function startExecution(
+    projectId: string,
+    opts?: { skip_tests?: boolean; story_id?: string | null },
+  ) {
     loading.value = true
     try {
-      const { data } = await api.post(`/projects/${projectId}/execute`)
+      const body: Record<string, unknown> = {}
+      if (opts?.skip_tests) body.skip_tests = true
+      if (opts?.story_id) body.story_id = opts.story_id
+      const { data } = await api.post(`/projects/${projectId}/execute`, body)
       status.value = data
-      logs.value.push(`[INFO] Execution started: ${data.total_tasks} tasks`)
+      const mode = opts?.skip_tests ? ' (code-only)' : ''
+      const scope = opts?.story_id ? ' [single story]' : ''
+      logs.value.push(`[INFO] Execution started: ${data.total_tasks} tasks${mode}${scope}`)
     } catch (e: unknown) {
       const err = e as { response?: { data?: { detail?: string }, status?: number } }
       const msg = err.response?.data?.detail || 'Failed to start execution'

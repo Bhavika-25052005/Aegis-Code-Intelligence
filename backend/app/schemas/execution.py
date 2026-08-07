@@ -4,6 +4,8 @@ from pydantic import BaseModel
 
 class ExecutionStartRequest(BaseModel):
     pr_strategy: str | None = None
+    skip_tests: bool = False
+    story_id: str | None = None
 
 
 class ExecutionStatusResponse(BaseModel):

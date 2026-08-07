@@ -12,6 +12,10 @@ const executionStore = useExecutionStore()
 const backlogStore = useBacklogStore()
 const projectId = route.params.id as string
 
+// Optional query params set by ImplementationPlanView
+const storyIdFilter = route.query.story_id as string | null || null
+const skipTests = route.query.skip_tests === '1'
+
 const { connected, messages, connect } = useWebSocket(projectId)
 const taskStatuses = ref<Record<string, { status: string; title: string }>>({})
 const testReportRef = ref<InstanceType<typeof TestReport> | null>(null)
@@ -70,7 +74,10 @@ watch(messages, (msgs) => {
 
 async function handleStart() {
   executionStore.clearLogs()
-  await executionStore.startExecution(projectId)
+  await executionStore.startExecution(projectId, {
+    skip_tests: skipTests,
+    story_id: storyIdFilter,
+  })
 }
 
 async function handlePause() {
@@ -107,6 +114,16 @@ function getStatusIcon(status: string) {
 
 <template>
   <div class="space-y-6">
+    <!-- Mode banner when launched from Implementation Plan -->
+    <div
+      v-if="storyIdFilter || skipTests"
+      class="flex items-center gap-3 flex-wrap px-4 py-3 rounded-lg bg-blue-50 border border-blue-200 text-sm text-blue-800"
+    >
+      <i class="pi pi-info-circle"></i>
+      <span v-if="storyIdFilter">Running <strong>single user story</strong> only (3 tasks, not all project tasks).</span>
+      <span v-if="skipTests">Test runner is <strong>disabled</strong> — code will be generated without running tests.</span>
+    </div>
+
     <div class="flex items-center justify-between">
       <h2 class="text-2xl font-bold text-gray-800 dark:text-white">Execution</h2>
       <div class="flex items-center gap-3">

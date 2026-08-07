@@ -16,6 +16,7 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/projects/{project_id}/execute", tags=["execution"])
 
 _active_orchestrators: dict[str, bool] = {}
+_execution_options: dict[str, dict] = {}
 
 
 @router.post("", response_model=ExecutionStatusResponse)
@@ -32,13 +33,21 @@ async def start_execution(
         raise HTTPException(status_code=409, detail="Execution already running for this project")
 
     # Create execution run in the request session
-    orchestrator = Orchestrator(project_id, db)
+    orchestrator = Orchestrator(
+        project_id, db,
+        skip_tests=request.skip_tests,
+        story_id=request.story_id,
+    )
     execution_run = await orchestrator.create_run()
 
     logger.info(f"Starting execution for project {project_id}, run {execution_run.id}, {execution_run.total_tasks} tasks")
 
     # Mark as active and launch background task
     _active_orchestrators[project_id] = True
+    _execution_options[project_id] = {
+        "skip_tests": request.skip_tests,
+        "story_id": request.story_id,
+    }
     asyncio.create_task(_run_orchestrator(project_id, execution_run.id))
 
     return execution_run
@@ -116,9 +125,14 @@ async def get_execution_status(project_id: str, db: AsyncSession = Depends(get_d
 
 async def _run_orchestrator(project_id: str, run_id: str | None):
     logger.info(f"Background orchestrator starting for project {project_id}")
+    opts = _execution_options.get(project_id, {})
     try:
         async with async_session() as db:
-            orchestrator = Orchestrator(project_id, db)
+            orchestrator = Orchestrator(
+                project_id, db,
+                skip_tests=opts.get("skip_tests", False),
+                story_id=opts.get("story_id"),
+            )
 
             # Load existing run if provided
             if run_id:
@@ -133,3 +147,4 @@ async def _run_orchestrator(project_id: str, run_id: str | None):
         logger.error(traceback.format_exc())
     finally:
         _active_orchestrators.pop(project_id, None)
+        _execution_options.pop(project_id, None)

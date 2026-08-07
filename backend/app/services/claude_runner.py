@@ -21,10 +21,16 @@ class ClaudeResult:
 
 
 class ClaudeRunner:
-    def __init__(self, workspace_path: str, max_budget_usd: float | None = None):
+    def __init__(
+        self,
+        workspace_path: str,
+        max_budget_usd: float | None = None,
+        allowed_tools: str | None = None,
+    ):
         self.workspace_path = workspace_path
         self.max_budget_usd = max_budget_usd or settings.claude_max_budget_usd
         self.timeout = settings.claude_timeout_seconds
+        self._allowed_tools = allowed_tools
 
     async def execute(self, prompt: str) -> ClaudeResult:
         cmd = self._build_command()
@@ -90,14 +96,17 @@ class ClaudeRunner:
 
     def _build_command(self) -> list[str]:
         claude_bin = self._find_claude_binary()
-        return [
+        tools = self._allowed_tools if self._allowed_tools is not None else "Bash,Edit,Write,Read,Glob,Grep"
+        cmd = [
             claude_bin,
             "-p",
             "--output-format", "json",
             "--dangerously-skip-permissions",
-            "--allowedTools", "Bash,Edit,Write,Read,Glob,Grep",
             "--max-budget-usd", str(self.max_budget_usd),
         ]
+        if tools:
+            cmd += ["--allowedTools", tools]
+        return cmd
 
     @staticmethod
     def _find_claude_binary() -> str:
