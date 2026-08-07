@@ -1,8 +1,12 @@
 <script setup lang="ts">
 import { ref } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
 import type { BacklogTree } from '../../types'
 
 defineProps<{ backlog: BacklogTree }>()
+
+const route = useRoute()
+const router = useRouter()
 
 const expandedFeatures = ref<Set<string>>(new Set())
 const expandedStories = ref<Set<string>>(new Set())
@@ -21,6 +25,11 @@ function toggleStory(id: string) {
   } else {
     expandedStories.value.add(id)
   }
+}
+
+function analyzeStory(storyId: string) {
+  const projectId = route.params.id as string
+  router.push(`/projects/${projectId}/requirements/${storyId}`)
 }
 
 function getStatusBadge(status: string) {
@@ -76,6 +85,12 @@ function getStatusBadge(status: string) {
             ></i>
             <i class="pi pi-bookmark text-blue-500"></i>
             <span class="text-sm text-gray-700 dark:text-gray-200 flex-1">{{ story.title }}</span>
+            <button
+              class="px-3 py-1.5 text-xs rounded-lg border border-blue-200 text-blue-600 hover:bg-blue-50"
+              @click.stop="analyzeStory(story.id)"
+            >
+              AI Analyze
+            </button>
             <span class="text-xs px-2 py-0.5 rounded-full" :class="getStatusBadge(story.status)">
               {{ story.status }}
             </span>
