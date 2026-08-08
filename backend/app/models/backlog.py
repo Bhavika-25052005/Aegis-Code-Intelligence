@@ -1,5 +1,6 @@
 import uuid
 from datetime import datetime
+from typing import Optional
 
 from sqlalchemy import String, Text, Integer, DateTime, ForeignKey
 from sqlalchemy.orm import Mapped, mapped_column, relationship
@@ -64,6 +65,12 @@ class UserStory(Base):
         DateTime,
         nullable=True,
     )
+
+    # Day 3 - Test Intelligence
+    test_plan: Mapped[str] = mapped_column(Text, default="")
+    test_status: Mapped[str] = mapped_column(String(30), default="not_started")
+    test_summary: Mapped[str] = mapped_column(Text, default="")
+    test_updated_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
 
     order: Mapped[int] = mapped_column(Integer, default=0)
     status: Mapped[str] = mapped_column(String(50), default="pending")

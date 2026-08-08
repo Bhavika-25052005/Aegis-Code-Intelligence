@@ -1,3 +1,5 @@
+import json
+
 from app.models.backlog import Feature, UserStory, Task
 
 
@@ -369,6 +371,83 @@ class PromptBuilder:
             '```'
         )
         return "\n".join(sections)
+
+    def build_test_repair_prompt(
+        self,
+        task: Task,
+        user_story: UserStory,
+        feature: Feature,
+        requirement_analysis: dict,
+        implementation_plan: dict,
+        failing_tests: list[dict],
+        test_output: str,
+        attempt: int,
+    ) -> str:
+        return f"""# AEGIS DAY 3 TEST REPAIR
+
+The implementation failed generated or existing tests.
+
+APPROVED REQUIREMENT CONTRACT
+{json.dumps(requirement_analysis, indent=2)}
+
+APPROVED IMPLEMENTATION PLAN
+{json.dumps(implementation_plan, indent=2)}
+
+FAILING TESTS
+{json.dumps(failing_tests, indent=2)}
+
+TEST OUTPUT
+{test_output}
+
+REPAIR ATTEMPT
+{attempt}/3
+
+Rules:
+- Fix production code when the implementation violates the approved requirement.
+- Do NOT weaken, delete, skip or rewrite a valid test merely to make it pass.
+- If a generated test is objectively inconsistent with the approved requirement, correct the test and clearly report why.
+- If a missing library causes the failure, install it with: pip install <package>
+- Inspect only relevant code and dependencies.
+- Preserve unrelated behavior.
+- Make the smallest correct change.
+- Do not commit or push.
+- After repairing, run the tests and output a JSON summary on the last line:
+```json
+{{"tests_passed": true, "total": 0, "passed": 0, "failed": 0, "coverage": 0.0}}
+```
+"""
+
+    def build_story_quality_gate_prompt(
+        self,
+        user_story: UserStory,
+        feature: Feature,
+        requirement_analysis: dict,
+        implementation_plan: dict,
+        generated_files: list[str],
+    ) -> str:
+        return f"""# AEGIS DAY 3 - STORY QUALITY GATE
+
+Run ALL story-level tests: integration, system and regression.
+
+## Feature: {feature.title}
+## User Story: {user_story.title}
+
+## APPROVED REQUIREMENT CONTRACT
+{json.dumps(requirement_analysis, indent=2)}
+
+## GENERATED TEST FILES
+{json.dumps(generated_files, indent=2)}
+
+Instructions:
+1. Run the generated integration/system/regression test files listed above.
+2. Also run any existing test suite in the repository (pytest / npm test / etc.).
+3. Report all failures clearly.
+4. Do NOT fix failing tests by weakening assertions or deleting them.
+5. Output a JSON summary on the last line:
+```json
+{{"tests_passed": true, "total": 0, "passed": 0, "failed": 0, "coverage": 0.0}}
+```
+"""
 
     def build_verification_prompt(self, task: Task, modified_files: list[str]) -> str:
         return (

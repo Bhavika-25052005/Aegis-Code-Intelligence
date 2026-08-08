@@ -60,3 +60,16 @@ class ManualTestRequest(BaseModel):
 class ManualTestResponse(BaseModel):
     test_run_id: str
     status: str
+
+
+class CustomTestRequest(BaseModel):
+    objective: str
+
+
+class CustomTestResponse(BaseModel):
+    test_id: str
+    detected_type: str
+    file: str
+    status: str
+    repair_attempts: int
+    output: str

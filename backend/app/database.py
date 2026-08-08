@@ -85,6 +85,36 @@ async def init_db():
                         )
                     )
 
+                # Day 3 - test intelligence columns
+                if "test_plan" not in existing_columns:
+                    connection.execute(
+                        text(
+                            "ALTER TABLE user_stories "
+                            "ADD COLUMN test_plan TEXT DEFAULT ''"
+                        )
+                    )
+                if "test_status" not in existing_columns:
+                    connection.execute(
+                        text(
+                            "ALTER TABLE user_stories "
+                            "ADD COLUMN test_status VARCHAR(30) DEFAULT 'not_started'"
+                        )
+                    )
+                if "test_summary" not in existing_columns:
+                    connection.execute(
+                        text(
+                            "ALTER TABLE user_stories "
+                            "ADD COLUMN test_summary TEXT DEFAULT ''"
+                        )
+                    )
+                if "test_updated_at" not in existing_columns:
+                    connection.execute(
+                        text(
+                            "ALTER TABLE user_stories "
+                            "ADD COLUMN test_updated_at DATETIME"
+                        )
+                    )
+
             # Day 2 - projects columns
             if "projects" in tables:
                 project_columns = {

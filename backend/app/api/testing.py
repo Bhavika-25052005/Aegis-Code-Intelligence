@@ -1,16 +1,23 @@
 import asyncio
+import json
 import logging
 import traceback
 import uuid
+from datetime import datetime
 
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 
 from app.database import get_db, async_session
 from app.models.project import Project
 from app.models.testing import TestRun, TestReport
-from app.schemas.testing import TestRunResponse, TestReportResponse, ManualTestRequest, ManualTestResponse
+from app.schemas.testing import (
+    TestRunResponse, TestReportResponse,
+    ManualTestRequest, ManualTestResponse,
+    CustomTestRequest, CustomTestResponse,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -99,6 +106,176 @@ async def get_latest_report(project_id: str, db: AsyncSession = Depends(get_db))
         .limit(1)
     )
     return result.scalar_one_or_none()
+
+
+@router.post("/{story_id}/custom-test", response_model=CustomTestResponse)
+async def run_custom_test(
+    project_id: str,
+    story_id: str,
+    request: CustomTestRequest,
+    db: AsyncSession = Depends(get_db),
+):
+    """Natural-language custom test: generate, save, run and (optionally) repair."""
+    from app.models.backlog import Feature, UserStory
+    from app.services.test_intelligence import TestIntelligence, TestIntelligenceError
+    from app.services.test_runner import TestRunnerService
+
+    if not request.objective or not request.objective.strip():
+        raise HTTPException(status_code=400, detail="objective is required")
+
+    project = await db.get(Project, project_id)
+    if not project:
+        raise HTTPException(status_code=404, detail="Project not found")
+
+    # Load story + feature
+    result = await db.execute(
+        select(UserStory)
+        .where(UserStory.id == story_id)
+        .options(selectinload(UserStory.feature), selectinload(UserStory.tasks))
+    )
+    user_story = result.scalar_one_or_none()
+    if not user_story:
+        raise HTTPException(status_code=404, detail="User story not found")
+
+    # Approval gates
+    if user_story.requirement_analysis_status != "approved":
+        raise HTTPException(
+            status_code=400,
+            detail="Approved Requirement Intelligence is required before running custom tests.",
+        )
+    if user_story.implementation_plan_status != "approved":
+        raise HTTPException(
+            status_code=400,
+            detail="Approved Implementation Plan is required before running custom tests.",
+        )
+
+    feature = user_story.feature
+
+    # Resolve workspace
+    workspace = project.workspace_path
+    if not workspace:
+        raise HTTPException(status_code=400, detail="Project workspace not configured.")
+
+    def _load_json(val: str) -> dict:
+        try:
+            return json.loads(val) if val else {}
+        except Exception:
+            return {}
+
+    requirement = _load_json(user_story.requirement_analysis)
+    plan = _load_json(user_story.implementation_plan)
+
+    test_intelligence = TestIntelligence(
+        workspace_path=workspace,
+        max_budget_usd=project.claude_max_budget_usd,
+    )
+
+    try:
+        manifest = await test_intelligence.generate_custom_test(
+            feature=feature,
+            story=user_story,
+            objective=request.objective.strip(),
+            requirement=requirement,
+            implementation_plan=plan,
+        )
+    except TestIntelligenceError as exc:
+        raise HTTPException(status_code=500, detail=str(exc))
+
+    detected_type = manifest.get("detected_type", "integration")
+    files = manifest.get("files", [])
+    test_file = files[0] if files else ""
+    tests_in_manifest = manifest.get("tests", [])
+
+    # Merge into story test_plan with source_type=user_requested
+    try:
+        existing: dict = json.loads(user_story.test_plan) if user_story.test_plan else {}
+    except Exception:
+        existing = {}
+    existing_tests = existing.get("tests", [])
+    existing_ids = {t.get("test_id") for t in existing_tests}
+    custom_id = f"CUSTOM-{uuid.uuid4().hex[:6].upper()}"
+    custom_entry = {
+        "test_id": custom_id,
+        "source_type": "user_requested",
+        "source_text": request.objective.strip(),
+        "test_type": detected_type,
+        "scope": detected_type,
+        "file": test_file,
+        "description": request.objective.strip(),
+        "status": "generated",
+    }
+    for entry in tests_in_manifest:
+        entry["source_type"] = "user_requested"
+        if entry.get("test_id") not in existing_ids:
+            existing_tests.append(entry)
+    if custom_id not in existing_ids:
+        existing_tests.append(custom_entry)
+    existing["tests"] = existing_tests
+    user_story.test_plan = json.dumps(existing)
+    user_story.test_updated_at = datetime.utcnow()
+    await db.commit()
+
+    # Run the custom test
+    test_runner = TestRunnerService(project_id, db, workspace, project.claude_max_budget_usd)
+    run_result = await asyncio.get_event_loop().run_in_executor(
+        None, test_runner.run_test_files_sync, files
+    )
+
+    repair_attempts = 0
+    output = run_result.raw_output
+
+    # Repair loop (max 3) if production code violates the objective
+    if not run_result.passed:
+        for attempt in range(1, 4):
+            repair_attempts += 1
+            first_task = user_story.tasks[0] if user_story.tasks else None
+            if not first_task:
+                break
+            repair_prompt = test_runner.prompt_builder.build_test_repair_prompt(
+                task=first_task,
+                user_story=user_story,
+                feature=feature,
+                requirement_analysis=requirement,
+                implementation_plan=plan,
+                failing_tests=tests_in_manifest,
+                test_output=run_result.raw_output,
+                attempt=attempt,
+            )
+            from app.services.claude_runner import ClaudeRunner
+            repair_runner = ClaudeRunner(workspace, project.claude_max_budget_usd)
+            await repair_runner.execute(repair_prompt)
+
+            run_result = await asyncio.get_event_loop().run_in_executor(
+                None, test_runner.run_test_files_sync, files
+            )
+            output = run_result.raw_output
+            if run_result.passed:
+                break
+
+    final_status = "passed" if run_result.passed else (
+        "needs_human_review" if repair_attempts >= 3 else "failed"
+    )
+
+    # Update test entry status in story test_plan
+    try:
+        existing = json.loads(user_story.test_plan) if user_story.test_plan else {}
+    except Exception:
+        existing = {}
+    for t in existing.get("tests", []):
+        if t.get("test_id") == custom_id:
+            t["status"] = final_status
+    user_story.test_plan = json.dumps(existing)
+    user_story.test_updated_at = datetime.utcnow()
+    await db.commit()
+
+    return CustomTestResponse(
+        test_id=custom_id,
+        detected_type=detected_type,
+        file=test_file,
+        status=final_status,
+        repair_attempts=repair_attempts,
+        output=output[-3000:],
+    )
 
 
 async def _run_manual_tests(project_id: str, test_run_id: str, scope: str, branch: str | None, test_types: list[str]):

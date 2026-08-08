@@ -14,6 +14,18 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     await init_db()
+    # Mark any execution runs that were left in "running" state (orphaned by a
+    # server restart) as "cancelled" so the UI does not show a phantom run.
+    from app.database import async_session
+    from app.models.execution import ExecutionRun
+    from sqlalchemy import select, update
+    async with async_session() as db:
+        await db.execute(
+            update(ExecutionRun)
+            .where(ExecutionRun.status == "running")
+            .values(status="cancelled")
+        )
+        await db.commit()
     yield
 
 

@@ -15,7 +15,8 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/projects/{project_id}/execute", tags=["execution"])
 
-_active_orchestrators: dict[str, bool] = {}
+# Maps project_id -> live Orchestrator instance (only while running)
+_active_orchestrators: dict[str, Orchestrator] = {}
 _execution_options: dict[str, dict] = {}
 
 
@@ -29,10 +30,9 @@ async def start_execution(
     if not project:
         raise HTTPException(status_code=404, detail="Project not found")
 
-    if _active_orchestrators.get(project_id):
+    if project_id in _active_orchestrators:
         raise HTTPException(status_code=409, detail="Execution already running for this project")
 
-    # Create execution run in the request session
     orchestrator = Orchestrator(
         project_id, db,
         skip_tests=request.skip_tests,
@@ -42,33 +42,38 @@ async def start_execution(
 
     logger.info(f"Starting execution for project {project_id}, run {execution_run.id}, {execution_run.total_tasks} tasks")
 
-    # Mark as active and launch background task
-    _active_orchestrators[project_id] = True
+    _active_orchestrators[project_id] = orchestrator
     _execution_options[project_id] = {
         "skip_tests": request.skip_tests,
         "story_id": request.story_id,
     }
-    asyncio.create_task(_run_orchestrator(project_id, execution_run.id))
+    asyncio.create_task(_run_orchestrator(project_id, execution_run.id, orchestrator))
 
     return execution_run
 
 
 @router.post("/pause")
 async def pause_execution(project_id: str):
-    if not _active_orchestrators.get(project_id):
+    orch = _active_orchestrators.get(project_id)
+    if not orch:
         raise HTTPException(status_code=404, detail="No active execution")
-    # TODO: implement pause signal via shared state
-    _active_orchestrators[project_id] = False
+    await orch.pause()
     return {"status": "paused"}
 
 
 @router.post("/resume")
 async def resume_execution(project_id: str, db: AsyncSession = Depends(get_db)):
-    if _active_orchestrators.get(project_id):
+    if project_id in _active_orchestrators:
         raise HTTPException(status_code=409, detail="Execution already running")
 
-    _active_orchestrators[project_id] = True
-    asyncio.create_task(_run_orchestrator(project_id, None))
+    opts = _execution_options.get(project_id, {})
+    orchestrator = Orchestrator(
+        project_id, db,
+        skip_tests=opts.get("skip_tests", False),
+        story_id=opts.get("story_id"),
+    )
+    _active_orchestrators[project_id] = orchestrator
+    asyncio.create_task(_run_orchestrator(project_id, None, orchestrator))
     return {"status": "resumed"}
 
 
@@ -76,6 +81,12 @@ async def resume_execution(project_id: str, db: AsyncSession = Depends(get_db)):
 async def reset_execution(project_id: str, db: AsyncSession = Depends(get_db)):
     from app.models.backlog import Feature, UserStory, Task
     from sqlalchemy.orm import selectinload
+
+    # Cancel any running orchestrator first
+    orch = _active_orchestrators.get(project_id)
+    if orch:
+        await orch.cancel()
+        _active_orchestrators.pop(project_id, None)
 
     result = await db.execute(
         select(Feature)
@@ -88,16 +99,13 @@ async def reset_execution(project_id: str, db: AsyncSession = Depends(get_db)):
         f.status = "pending"
         for s in f.user_stories:
             s.status = "pending"
+            s.test_status = "not_started"
             for t in s.tasks:
                 t.status = "pending"
                 t.retry_count = 0
                 t.error_message = ""
                 reset_count += 1
 
-    await db.execute(
-        select(ExecutionRun).where(ExecutionRun.project_id == project_id)
-    )
-    # Mark old runs as cancelled
     runs = (await db.execute(
         select(ExecutionRun).where(ExecutionRun.project_id == project_id)
     )).scalars().all()
@@ -105,7 +113,7 @@ async def reset_execution(project_id: str, db: AsyncSession = Depends(get_db)):
         run.status = "cancelled"
 
     await db.commit()
-    _active_orchestrators.pop(project_id, None)
+    _execution_options.pop(project_id, None)
     return {"status": "reset", "tasks_reset": reset_count}
 
 
@@ -123,24 +131,30 @@ async def get_execution_status(project_id: str, db: AsyncSession = Depends(get_d
     return run
 
 
-async def _run_orchestrator(project_id: str, run_id: str | None):
+async def _run_orchestrator(project_id: str, run_id: str | None, orchestrator: Orchestrator):
     logger.info(f"Background orchestrator starting for project {project_id}")
-    opts = _execution_options.get(project_id, {})
     try:
         async with async_session() as db:
-            orchestrator = Orchestrator(
+            # Re-create orchestrator with its own session (background task needs its own session)
+            opts = _execution_options.get(project_id, {})
+            bg_orchestrator = Orchestrator(
                 project_id, db,
                 skip_tests=opts.get("skip_tests", False),
                 story_id=opts.get("story_id"),
             )
+            # Share pause/cancel state from the API-layer orchestrator
+            bg_orchestrator._paused = orchestrator._paused
+            bg_orchestrator._cancelled = orchestrator._cancelled
 
-            # Load existing run if provided
+            # Store bg_orchestrator so pause/cancel calls reach it
+            _active_orchestrators[project_id] = bg_orchestrator
+
             if run_id:
                 execution_run = await db.get(ExecutionRun, run_id)
                 if execution_run:
-                    orchestrator.execution_run = execution_run
+                    bg_orchestrator.execution_run = execution_run
 
-            await orchestrator.execute()
+            await bg_orchestrator.execute()
             logger.info(f"Background orchestrator completed for project {project_id}")
     except Exception as e:
         logger.error(f"Orchestrator failed for project {project_id}: {e}")

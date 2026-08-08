@@ -84,6 +84,7 @@ function getStatusColor(status: string) {
 function getTypeIcon(type: string) {
   switch (type) {
     case 'unit': return 'pi pi-check-square'
+    case 'quality': return 'pi pi-shield'
     case 'integration': return 'pi pi-link'
     case 'regression': return 'pi pi-replay'
     case 'pr': return 'pi pi-code'
