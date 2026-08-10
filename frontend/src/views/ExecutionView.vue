@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { onMounted, ref, watch, computed } from 'vue'
-import { useRoute } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import { useExecutionStore } from '../stores/execution'
 import { useBacklogStore } from '../stores/backlog'
 import { useWebSocket } from '../composables/useWebSocket'
@@ -8,6 +8,7 @@ import TestReport from '../components/execution/TestReport.vue'
 import api from '../api/client'
 
 const route = useRoute()
+const router = useRouter()
 const executionStore = useExecutionStore()
 const backlogStore = useBacklogStore()
 const projectId = route.params.id as string
@@ -266,6 +267,14 @@ function getStatusIcon(status: string) {
           class="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 flex items-center gap-2"
         >
           <i class="pi pi-play"></i> Resume
+        </button>
+        <!-- Day 4: Continue to Quality when story execution is complete and a story is selected -->
+        <button
+          v-if="storyIdFilter && executionStore.status?.status === 'completed'"
+          @click="router.push(`/projects/${projectId}/quality/${storyIdFilter}`)"
+          class="px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 flex items-center gap-2"
+        >
+          <i class="pi pi-chart-bar"></i> Quality &amp; Delivery
         </button>
       </div>
     </div>

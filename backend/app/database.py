@@ -115,6 +115,22 @@ async def init_db():
                         )
                     )
 
+                # Day 4 - quality snapshot cache
+                if "quality_snapshot" not in existing_columns:
+                    connection.execute(
+                        text(
+                            "ALTER TABLE user_stories "
+                            "ADD COLUMN quality_snapshot TEXT DEFAULT ''"
+                        )
+                    )
+                if "quality_snapshot_hash" not in existing_columns:
+                    connection.execute(
+                        text(
+                            "ALTER TABLE user_stories "
+                            "ADD COLUMN quality_snapshot_hash VARCHAR(64) DEFAULT ''"
+                        )
+                    )
+
             # Day 2 - projects columns
             if "projects" in tables:
                 project_columns = {

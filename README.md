@@ -33,9 +33,15 @@ Import Backlog (Excel / CSV / JSON / YAML / Azure DevOps)
                  │
                  ▼
 ┌─────────────────────────────────┐
-│  Automated Testing & Self-Repair│  Requirement-aware unit tests generated per
-│                                 │  task, quality gate after story completes,
-│                                 │  repair loop (max 3 attempts), regression run
+│  Automated Testing & Self-Repair│  Requirement-aware unit tests per task,
+│                                 │  quality gate after story, repair loop (max 3),
+│                                 │  regression suite, custom NL test input
+└────────────────┬────────────────┘
+                 │
+                 ▼
+┌─────────────────────────────────┐
+│  Quality Traceability & Delivery│  AC → Test traceability explorer, filtered PDF
+│                                 │  report, Claude README update, Push to Repo
 └─────────────────────────────────┘
         │
         ▼
@@ -59,6 +65,11 @@ No stage proceeds without human approval. No code is generated until the require
 | **Self-Repair Loop** | Failing tests trigger a requirement-aware repair prompt; capped at 3 attempts, then marks Needs Human Review |
 | **Quality Gate** | After all story tasks complete — runs generated integration/system tests + any existing `tests/regression/` suite |
 | **Custom Natural-Language Tests** | Describe a test objective in plain English; Aegis generates, runs and retains it for regression |
+| **Test Traceability Explorer** | Every test mapped to its AC (3-strategy: test_id pattern, source text, keyword) — searchable, filterable, paginated |
+| **Downloadable PDF Report** | Filtered traceability view exported as a clean PDF with legend, active filters, test table and summary |
+| **Quality Snapshot Cache** | Traceability computed once and cached by hash — subsequent page loads are instant until tests change |
+| **README Auto-Update** | Claude inspects the workspace and updates README.md based on completed implementation before delivery |
+| **Push to Repo** | Quality-gated delivery — requires all approvals + quality gate passed; supports existing and new repo config |
 | **GitHub Integration** | Clone, branch-per-task/story/feature, commit, push, PR creation with test report in PR body |
 | **Azure DevOps Import** | WIQL query import of Feature / User Story / Task work items |
 | **Real-Time Dashboard** | WebSocket-powered execution view with per-task status, live logs, test results and repair history |
@@ -208,6 +219,17 @@ On the Execution page, scroll to **Custom Test**. Type a natural-language object
 
 Aegis generates an executable test, runs it, and retains it for future regression runs.
 
+### Step 7 — Quality & Delivery
+
+When execution completes, click **Quality & Delivery** (purple button). The quality page shows:
+
+- **Quality Gate** — passed/failed banner
+- **Test Summary** — counts by type: Unit, Integration, System, Regression, Custom, Total, Passed, Failed
+- **Test Traceability Explorer** — every test mapped to its acceptance criterion (AC1, AC2, ...) with search, filter by AC / type / status, and pagination
+- **Download Filtered PDF** — exports the current filtered view as a PDF with legend, filters, test table and summary
+- **README** — generate or update the workspace README.md using Claude
+- **Push to Repo** — quality-gated delivery; reuses existing GitHub config or asks for URL + token
+
 ---
 
 ## Repository Structure
@@ -225,7 +247,7 @@ Aegis-Code-Intelligence/
 │       │
 │       ├── models/
 │       │   ├── project.py           Project ORM model, RepositoryFile (metadata index)
-│       │   ├── backlog.py           Feature, UserStory (req + plan + test fields), Task
+│       │   ├── backlog.py           Feature, UserStory (req + plan + test + quality fields), Task
 │       │   ├── execution.py         ExecutionRun, PullRequest
 │       │   └── testing.py           TestRun, TestReport
 │       │
@@ -242,6 +264,7 @@ Aegis-Code-Intelligence/
 │       │   ├── requirement_analysis.py  Requirement + implementation plan endpoints
 │       │   ├── execution.py         Start/pause/resume/reset execution, status
 │       │   ├── testing.py           Test runs, reports, custom test endpoint
+│       │   ├── quality.py           Quality explorer, PDF report, traceability, README, push
 │       │   ├── github.py            GitHub repo validation, branch listing
 │       │   └── websocket.py         WebSocket endpoint for live execution events
 │       │
@@ -250,11 +273,13 @@ Aegis-Code-Intelligence/
 │           ├── repository_intelligence.py  Metadata-only workspace index, incremental git-diff refresh
 │           ├── implementation_planner.py   Claude (Read/Glob/Grep) → dependency-safe task plan
 │           ├── orchestrator.py             Main execution engine — approval gates, dependency
-│           │                               ordering, code gen loop, Day 3 test integration
+│           │                               ordering, code gen loop, test integration
 │           ├── test_intelligence.py        Generates requirement-aware test files via Claude
 │           │                               (unit per task, integration/system per story, custom)
 │           ├── test_runner.py              Runs tests natively (sys.executable + PYTHONPATH),
 │           │                               framework detection, quality gate, regression discovery
+│           ├── quality_reporter.py         AC→test traceability (3-strategy mapping), summary
+│           │                               from TestRun records, snapshot cache, ReportLab PDF
 │           ├── prompt_builder.py           All Claude prompt construction — task, test, repair,
 │           │                               quality gate, continuation, verification
 │           ├── claude_runner.py            Subprocess wrapper for Claude Code CLI, JSON output parsing
@@ -273,8 +298,8 @@ Aegis-Code-Intelligence/
 │   └── src/
 │       ├── main.ts                  Vue app bootstrap — Pinia, Router, PrimeVue (Aura theme)
 │       ├── App.vue
-│       ├── router/index.ts          7 routes: Dashboard, ProjectSetup, Backlog,
-│       │                            RequirementAnalysis, ImplementationPlan, Execution, Settings
+│       ├── router/index.ts          8 routes: Dashboard, ProjectSetup, Backlog,
+│       │                            RequirementAnalysis, ImplementationPlan, Execution, Quality, Settings
 │       ├── api/client.ts            Axios instance with baseURL /api
 │       ├── composables/
 │       │   └── useWebSocket.ts      WebSocket composable with auto-reconnect
@@ -290,7 +315,9 @@ Aegis-Code-Intelligence/
 │       │   ├── RequirementAnalysisView.vue  10-field contract editor + approve/reopen
 │       │   ├── ImplementationPlanView.vue   Plan viewer/editor + approve + launch execution
 │       │   ├── ExecutionView.vue    Live execution dashboard — task progress, logs,
-│       │   │                        test results, custom test panel
+│       │   │                        test results, custom test panel, Continue to Quality button
+│       │   ├── QualityView.vue      Quality gate banner, test summary, traceability explorer,
+│       │   │                        AC legend, filters, pagination, PDF download, README, push
 │       │   └── SettingsView.vue     Project settings editor
 │       └── components/
 │           ├── backlog/
@@ -430,6 +457,15 @@ POST   /api/projects/{id}/tests/trigger
 POST   /api/projects/{id}/tests/{story_id}/custom-test
 ```
 
+### Quality & Delivery
+```
+GET    /api/projects/{id}/quality/{story_id}
+GET    /api/projects/{id}/quality/{story_id}/report.pdf
+POST   /api/projects/{id}/quality/{story_id}/verify-traceability
+POST   /api/projects/{id}/quality/{story_id}/update-readme
+POST   /api/projects/{id}/quality/{story_id}/push
+```
+
 ### WebSocket
 ```
 WS     /ws/projects/{id}/progress
@@ -452,6 +488,7 @@ WS     /ws/projects/{id}/progress
 | Real-time | WebSockets (native FastAPI + useWebSocket composable) |
 | Git | GitPython + GitHub REST API |
 | Encryption | Python cryptography (Fernet) |
+| PDF Generation | ReportLab 5 |
 | Testing | pytest, subprocess-based native runner |
 
 ---

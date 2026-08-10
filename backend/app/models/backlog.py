@@ -72,6 +72,10 @@ class UserStory(Base):
     test_summary: Mapped[str] = mapped_column(Text, default="")
     test_updated_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
 
+    # Day 4 - Quality Snapshot (cached computed quality data)
+    quality_snapshot: Mapped[str] = mapped_column(Text, default="")
+    quality_snapshot_hash: Mapped[str] = mapped_column(String(64), default="")
+
     order: Mapped[int] = mapped_column(Integer, default=0)
     status: Mapped[str] = mapped_column(String(50), default="pending")
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
