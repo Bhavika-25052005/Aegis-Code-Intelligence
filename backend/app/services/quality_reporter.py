@@ -84,46 +84,55 @@ class QualityReporter:
                 seen_ids.add(tid)
                 unique_tests.append(t)
 
+        # integration and system are merged into one display bucket
         type_counts: dict[str, int] = {
-            "unit": 0, "integration": 0, "system": 0,
-            "regression": 0, "custom": 0, "quality": 0,
+            "unit": 0, "integration_system": 0,
+            "regression": 0, "custom": 0,
         }
+        custom_passed = 0  # track custom test pass count separately
+
         for t in unique_tests:
             scope = (t.get("scope") or t.get("test_type") or t.get("type") or "unit").lower()
             source_type = t.get("source_type", "")
+            status = (t.get("status") or "generated").lower()
+
             if source_type == "user_requested":
                 type_counts["custom"] += 1
-            elif scope in type_counts:
-                type_counts[scope] += 1
+                if status == "passed":
+                    custom_passed += 1
+            elif scope in ("integration", "system", "quality"):
+                type_counts["integration_system"] += 1
+            elif scope == "regression":
+                type_counts["regression"] += 1
             else:
                 type_counts["unit"] += 1
 
-        # ── Step 2: pass/fail + integration/quality/regression from TestRun ──
-        # TestRun records are the authoritative source for actual execution counts.
-        # For integration, quality and regression: use TestRun totals directly
-        # (they represent the full test suite run, not individual traceability entries).
-        # For unit: use test_plan count (traceability level) but pass/fail from TestRun.
+        # ── Step 2: pass/fail from TestRun records (authoritative for executed tests) ──
         passed = 0
         failed = 0
-        run_by_type: dict[str, int] = {}  # test_type -> total from runs
+        run_by_type: dict[str, int] = {}
 
         if test_runs:
             for run in test_runs:
                 passed += getattr(run, "passed_tests", 0)
                 failed += getattr(run, "failed_tests", 0)
                 t = getattr(run, "test_type", "unit")
-                run_by_type[t] = run_by_type.get(t, 0) + getattr(run, "total_tests", 0)
+                # merge integration/system/quality into one bucket
+                key = "integration_system" if t in ("integration", "system", "quality") else t
+                run_by_type[key] = run_by_type.get(key, 0) + getattr(run, "total_tests", 0)
 
-            # Override integration/quality/regression counts from TestRun (authoritative)
-            for run_type in ("integration", "quality", "regression"):
-                if run_type in run_by_type:
-                    type_counts[run_type] = run_by_type[run_type]
-
-            # For unit: TestRun unit total is more accurate than test_plan entries
-            if "unit" in run_by_type and run_by_type["unit"] > 0:
+            # Use TestRun totals for unit and integration_system (authoritative)
+            if run_by_type.get("unit", 0) > 0:
                 type_counts["unit"] = run_by_type["unit"]
+            if run_by_type.get("integration_system", 0) > 0:
+                type_counts["integration_system"] = run_by_type["integration_system"]
+            if run_by_type.get("regression", 0) > 0:
+                type_counts["regression"] = run_by_type["regression"]
+
+            # Add custom tests to passed total (they run via API, not TestRun records)
+            passed += custom_passed
         else:
-            # Fall back to test_plan status fields when no TestRun records
+            # Fall back to test_plan status fields
             for t in unique_tests:
                 s = (t.get("status") or "generated").lower()
                 if s == "passed":
@@ -131,25 +140,20 @@ class QualityReporter:
                 elif s in ("failed", "needs_human_review"):
                     failed += 1
 
-        # Total = sum of all type buckets (unique, no double-counting)
         total = (
             type_counts["unit"]
-            + type_counts["integration"]
-            + type_counts["system"]
+            + type_counts["integration_system"]
             + type_counts["regression"]
             + type_counts["custom"]
-            + type_counts["quality"]
         )
         if total == 0:
             total = len(unique_tests)
 
         return {
             "unit": type_counts["unit"],
-            "integration": type_counts["integration"],
-            "system": type_counts["system"],
+            "integration_system": type_counts["integration_system"],
             "regression": type_counts["regression"],
             "custom": type_counts["custom"],
-            "quality": type_counts["quality"],
             "total": total,
             "passed": passed,
             "failed": failed,

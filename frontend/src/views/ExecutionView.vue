@@ -21,7 +21,7 @@ const { connected, messages, connect } = useWebSocket(projectId)
 const taskStatuses = ref<Record<string, { status: string; title: string }>>({})
 const testReportRef = ref<InstanceType<typeof TestReport> | null>(null)
 
-// Day 3 — Custom Test
+// Custom Test
 const customObjective = ref('')
 const runningCustomTest = ref(false)
 interface CustomTestResult {
@@ -268,7 +268,7 @@ function getStatusIcon(status: string) {
         >
           <i class="pi pi-play"></i> Resume
         </button>
-        <!-- Day 4: Continue to Quality when story execution is complete and a story is selected -->
+        <!-- Continue to Quality when story execution is complete and a story is selected -->
         <button
           v-if="storyIdFilter && executionStore.status?.status === 'completed'"
           @click="router.push(`/projects/${projectId}/quality/${storyIdFilter}`)"
@@ -354,7 +354,7 @@ function getStatusIcon(status: string) {
     <!-- Test Results -->
     <TestReport ref="testReportRef" :project-id="projectId" />
 
-    <!-- Day 3 Custom Test Panel — shown only when a story is selected -->
+    <!-- Custom Test Panel — shown only when a story is selected -->
     <section v-if="storyIdFilter" class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-5">
       <h3 class="font-semibold text-gray-800 dark:text-white">Custom Test</h3>
       <p class="text-sm text-gray-500 dark:text-gray-400 mt-1">

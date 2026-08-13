@@ -31,7 +31,7 @@ class Project(Base):
     is_repo_cloned: Mapped[bool] = mapped_column(Boolean, default=False)
     claude_max_budget_usd: Mapped[float] = mapped_column(Float, default=5.0)
 
-    # Day 2 - Repository Intelligence index state
+    # Implementation Intelligence - Repository Intelligence index state
     repository_index_commit: Mapped[str] = mapped_column(
         String(64),
         default="",

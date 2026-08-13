@@ -41,7 +41,7 @@ class UserStory(Base):
     description: Mapped[str] = mapped_column(Text, default="")
     acceptance_criteria: Mapped[str] = mapped_column(Text, default="")
 
-    # Day 1 - Requirement Intelligence
+    # Requirement Intelligence
     requirement_analysis: Mapped[str] = mapped_column(Text, default="")
     requirement_analysis_status: Mapped[str] = mapped_column(
         String(20),

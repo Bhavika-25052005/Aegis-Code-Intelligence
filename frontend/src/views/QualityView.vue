@@ -36,8 +36,34 @@ const filterStatus = ref('')
 const currentPage = ref(1)
 const pageSize = 50
 
-// Expanded row
+// Expanded row (traceability table)
 const expandedRow = ref<string | null>(null)
+
+// Run History
+interface RunByType {
+  type: string
+  total: number
+  passed: number
+  failed: number
+  fix_attempts: number
+  error_summary: string
+}
+interface RunHistoryEntry {
+  execution_run_id: string
+  status: string
+  started_at: string | null
+  completed_at: string | null
+  total_tasks: number
+  completed_tasks: number
+  failed_tasks: number
+  total_tests: number
+  passed_tests: number
+  failed_tests: number
+  by_type: RunByType[]
+}
+const runHistory = ref<RunHistoryEntry[]>([])
+const runHistoryLoading = ref(false)
+const expandedRun = ref<string | null>(null)
 
 // README
 const readmeLoading = ref(false)
@@ -95,7 +121,41 @@ watch([search, filterCriterion, filterType, filterStatus], () => {
 
 watch(currentPage, fetchQuality)
 
-onMounted(fetchQuality)
+async function fetchRunHistory() {
+  runHistoryLoading.value = true
+  try {
+    const { data } = await api.get(`/projects/${projectId}/quality/${storyId}/run-history`)
+    runHistory.value = data.runs ?? []
+  } catch {
+    // non-critical — silently ignore
+  } finally {
+    runHistoryLoading.value = false
+  }
+}
+
+function toggleRun(id: string) {
+  expandedRun.value = expandedRun.value === id ? null : id
+}
+
+function formatDate(iso: string | null): string {
+  if (!iso) return '—'
+  const d = new Date(iso)
+  return d.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })
+    + '  ' + d.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' })
+}
+
+function typeLabel(t: string): string {
+  const map: Record<string, string> = {
+    unit: 'Unit', integration: 'Integration', quality: 'Quality Gate',
+    system: 'System', regression: 'Regression', custom: 'Custom',
+  }
+  return map[t] ?? t
+}
+
+onMounted(() => {
+  fetchQuality()
+  fetchRunHistory()
+})
 
 // ── Computed ──────────────────────────────────────────────────────────────
 const acLegend = computed<AcLegend[]>(() => qualityData.value?.ac_legend ?? [])
@@ -272,28 +332,115 @@ function clearFilters() {
       <!-- ── Test Summary ── -->
       <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-5">
         <h3 class="font-semibold text-gray-800 dark:text-white mb-4">Test Summary</h3>
-        <div class="grid grid-cols-3 sm:grid-cols-4 lg:grid-cols-7 gap-3">
-          <div v-for="(label, key) in { unit: 'Unit', integration: 'Integration', system: 'System', regression: 'Regression', custom: 'Custom', passed: 'Passed', failed: 'Failed' }"
+        <div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
+          <!-- Type buckets -->
+          <div v-for="(label, key) in { unit: 'Unit', integration_system: 'Integration / System', regression: 'Regression', custom: 'Custom' }"
             :key="key"
-            class="text-center p-3 rounded-lg border"
-            :class="{
-              'border-green-200 bg-green-50 dark:bg-green-900/20': key === 'passed',
-              'border-red-200 bg-red-50 dark:bg-red-900/20': key === 'failed',
-              'border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-700/50': !['passed','failed'].includes(key),
-            }"
+            class="text-center p-3 rounded-lg border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-700/50"
           >
-            <div class="text-2xl font-bold" :class="{
-              'text-green-600': key === 'passed',
-              'text-red-600': key === 'failed' && summary[key] > 0,
-              'text-gray-800 dark:text-white': !['passed','failed'].includes(key),
-            }">
-              {{ summary[key] ?? 0 }}
-            </div>
-            <div class="text-xs text-gray-500 dark:text-gray-400 mt-1">{{ label }}</div>
+            <div class="text-2xl font-bold text-gray-800 dark:text-white">{{ summary[key] ?? 0 }}</div>
+            <div class="text-xs text-gray-500 dark:text-gray-400 mt-1 leading-tight">{{ label }}</div>
           </div>
+          <!-- Total -->
           <div class="text-center p-3 rounded-lg border border-blue-200 bg-blue-50 dark:bg-blue-900/20">
             <div class="text-2xl font-bold text-blue-600">{{ summary.total ?? 0 }}</div>
             <div class="text-xs text-gray-500 dark:text-gray-400 mt-1">Total</div>
+          </div>
+          <!-- Passed -->
+          <div class="text-center p-3 rounded-lg border border-green-200 bg-green-50 dark:bg-green-900/20">
+            <div class="text-2xl font-bold text-green-600">{{ summary.passed ?? 0 }}</div>
+            <div class="text-xs text-gray-500 dark:text-gray-400 mt-1">Passed</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ── Run History ── -->
+      <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-5">
+        <div class="flex items-center justify-between mb-4">
+          <h3 class="font-semibold text-gray-800 dark:text-white">Run History</h3>
+          <span class="text-xs text-gray-400">{{ runHistory.length }} execution run{{ runHistory.length !== 1 ? 's' : '' }}</span>
+        </div>
+
+        <div v-if="runHistoryLoading" class="flex justify-center py-4">
+          <i class="pi pi-spin pi-spinner text-blue-500"></i>
+        </div>
+
+        <div v-else-if="runHistory.length === 0" class="text-sm text-gray-400 text-center py-4">
+          No execution runs recorded yet.
+        </div>
+
+        <div v-else class="space-y-2">
+          <div
+            v-for="run in runHistory"
+            :key="run.execution_run_id"
+            class="rounded-lg border border-gray-200 dark:border-gray-700 overflow-hidden"
+          >
+            <!-- Run header row — always visible -->
+            <button
+              class="w-full flex items-center gap-3 px-4 py-3 text-left hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors"
+              @click="toggleRun(run.execution_run_id)"
+            >
+              <!-- Status dot -->
+              <span class="w-2 h-2 rounded-full flex-shrink-0" :class="{
+                'bg-green-500': run.status === 'completed' && run.failed_tests === 0,
+                'bg-red-500': run.failed_tests > 0,
+                'bg-yellow-400': run.status === 'paused',
+                'bg-gray-400': run.status === 'cancelled',
+                'bg-blue-500': run.status === 'running',
+              }"></span>
+
+              <!-- Date -->
+              <span class="text-sm font-medium text-gray-700 dark:text-gray-200 w-44 flex-shrink-0">
+                {{ formatDate(run.started_at) }}
+              </span>
+
+              <!-- Pass/fail summary -->
+              <span class="text-sm flex-1">
+                <span class="text-green-600 font-semibold">{{ run.passed_tests }} passed</span>
+                <span v-if="run.failed_tests > 0" class="text-red-500 font-semibold ml-2">{{ run.failed_tests }} failed</span>
+                <span class="text-gray-400 ml-2 text-xs">/ {{ run.total_tests }} total</span>
+              </span>
+
+              <!-- Task counts -->
+              <span class="text-xs text-gray-400 hidden sm:block">
+                {{ run.completed_tasks }}/{{ run.total_tasks }} tasks
+              </span>
+
+              <!-- Chevron -->
+              <i class="pi pi-chevron-right text-xs text-gray-400 transition-transform flex-shrink-0"
+                :class="{ 'rotate-90': expandedRun === run.execution_run_id }"></i>
+            </button>
+
+            <!-- Expanded breakdown -->
+            <div v-if="expandedRun === run.execution_run_id"
+              class="border-t border-gray-100 dark:border-gray-700 px-4 py-3 bg-gray-50 dark:bg-gray-900/30">
+              <div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
+                <div
+                  v-for="bt in run.by_type"
+                  :key="bt.type"
+                  class="rounded-lg border p-3 text-center"
+                  :class="bt.failed > 0
+                    ? 'border-red-200 bg-red-50 dark:bg-red-900/20'
+                    : 'border-gray-200 dark:border-gray-600 bg-white dark:bg-gray-800'"
+                >
+                  <div class="text-xs text-gray-500 dark:text-gray-400 mb-1">{{ typeLabel(bt.type) }}</div>
+                  <div class="font-bold text-sm" :class="bt.failed > 0 ? 'text-red-600' : 'text-green-600'">
+                    {{ bt.passed }}/{{ bt.total }}
+                  </div>
+                  <div v-if="bt.fix_attempts > 0" class="text-xs text-orange-500 mt-0.5">
+                    {{ bt.fix_attempts }} repair{{ bt.fix_attempts > 1 ? 's' : '' }}
+                  </div>
+                  <div v-if="bt.failed > 0 && bt.error_summary" class="text-xs text-red-400 mt-1 text-left truncate" :title="bt.error_summary">
+                    {{ bt.error_summary.slice(0, 60) }}
+                  </div>
+                </div>
+              </div>
+
+              <!-- Duration -->
+              <div v-if="run.completed_at" class="mt-2 text-xs text-gray-400">
+                Completed {{ formatDate(run.completed_at) }}
+              </div>
+            </div>
           </div>
         </div>
       </div>

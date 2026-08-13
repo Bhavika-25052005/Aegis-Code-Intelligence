@@ -32,7 +32,7 @@ async def init_db():
 
             tables = inspector.get_table_names()
 
-            # Day 1 - user_stories columns
+            # Requirement Intelligence - user_stories columns
             if "user_stories" in tables:
                 existing_columns = {
                     column["name"]

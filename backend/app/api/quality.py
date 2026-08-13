@@ -1,12 +1,13 @@
 """
-Day 4 — Quality Traceability + Delivery API.
+Quality Traceability + Delivery API.
 
 Endpoints:
-  GET  /projects/{project_id}/quality/{story_id}           — full quality data
-  GET  /projects/{project_id}/quality/{story_id}/report.pdf — filtered PDF
-  POST /projects/{project_id}/quality/{story_id}/verify-traceability — Claude mapping
-  POST /projects/{project_id}/quality/{story_id}/update-readme       — Claude README
-  POST /projects/{project_id}/quality/{story_id}/push                — Push to repo
+  GET  /projects/{project_id}/quality/{story_id}                 — full quality data
+  GET  /projects/{project_id}/quality/{story_id}/run-history     — execution run history
+  GET  /projects/{project_id}/quality/{story_id}/report.pdf      — filtered PDF
+  POST /projects/{project_id}/quality/{story_id}/verify-traceability
+  POST /projects/{project_id}/quality/{story_id}/update-readme
+  POST /projects/{project_id}/quality/{story_id}/push
 """
 
 import json
@@ -97,15 +98,19 @@ async def get_quality(
     project, story, feature = await _get_story_context(project_id, story_id, db)
     requirement = _load_json(story.requirement_analysis)
 
-    # ── Fetch TestRun records for this project (for accurate pass/fail counts) ──
-    run_ids_result = await db.execute(
-        select(ExecutionRun.id).where(ExecutionRun.project_id == project_id)
+    # ── Fetch TestRun records from the LATEST completed execution run only ──
+    # Using all runs would inflate counts when there are multiple run history entries.
+    latest_run_result = await db.execute(
+        select(ExecutionRun)
+        .where(ExecutionRun.project_id == project_id)
+        .order_by(ExecutionRun.started_at.desc())
+        .limit(1)
     )
-    run_ids = [r[0] for r in run_ids_result.fetchall()]
+    latest_run = latest_run_result.scalar_one_or_none()
     test_runs = []
-    if run_ids:
+    if latest_run:
         tr_result = await db.execute(
-            select(TestRun).where(TestRun.execution_run_id.in_(run_ids))
+            select(TestRun).where(TestRun.execution_run_id == latest_run.id)
         )
         test_runs = tr_result.scalars().all()
 
@@ -170,6 +175,86 @@ async def get_quality(
         "repo_configured": repo_configured,
         "push_blocked_reason": push_blocked_reason,
     }
+
+
+# ── GET run history ──────────────────────────────────────────────────────────
+
+@router.get("/{story_id}/run-history")
+async def get_run_history(
+    project_id: str,
+    story_id: str,
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Return all ExecutionRuns for this project, each with their aggregated
+    TestRun totals and per-type breakdown. Ordered newest first.
+    """
+    # All execution runs for the project
+    ex_result = await db.execute(
+        select(ExecutionRun)
+        .where(ExecutionRun.project_id == project_id)
+        .order_by(ExecutionRun.started_at.desc())
+    )
+    execution_runs = ex_result.scalars().all()
+
+    if not execution_runs:
+        return {"runs": []}
+
+    run_ids = [r.id for r in execution_runs]
+
+    # All TestRun records for these execution runs
+    tr_result = await db.execute(
+        select(TestRun)
+        .where(TestRun.execution_run_id.in_(run_ids))
+        .order_by(TestRun.created_at)
+    )
+    all_test_runs = tr_result.scalars().all()
+
+    # Group TestRuns by execution_run_id
+    grouped: dict[str, list] = {r.id: [] for r in execution_runs}
+    for tr in all_test_runs:
+        if tr.execution_run_id in grouped:
+            grouped[tr.execution_run_id].append(tr)
+
+    runs_out = []
+    for ex in execution_runs:
+        test_runs = grouped[ex.id]
+
+        # Aggregate totals
+        total = sum(r.total_tests for r in test_runs)
+        passed = sum(r.passed_tests for r in test_runs)
+        failed = sum(r.failed_tests for r in test_runs)
+
+        # Per-type breakdown
+        by_type: dict[str, dict] = {}
+        for tr in test_runs:
+            t = tr.test_type
+            if t not in by_type:
+                by_type[t] = {"type": t, "total": 0, "passed": 0, "failed": 0,
+                               "fix_attempts": 0, "error_summary": ""}
+            by_type[t]["total"] += tr.total_tests
+            by_type[t]["passed"] += tr.passed_tests
+            by_type[t]["failed"] += tr.failed_tests
+            if tr.fix_attempt > 0:
+                by_type[t]["fix_attempts"] += 1
+            if tr.error_summary and not by_type[t]["error_summary"]:
+                by_type[t]["error_summary"] = tr.error_summary[:300]
+
+        runs_out.append({
+            "execution_run_id": ex.id,
+            "status": ex.status,
+            "started_at": ex.started_at.isoformat() if ex.started_at else None,
+            "completed_at": ex.completed_at.isoformat() if ex.completed_at else None,
+            "total_tasks": ex.total_tasks,
+            "completed_tasks": ex.completed_tasks,
+            "failed_tasks": ex.failed_tasks,
+            "total_tests": total,
+            "passed_tests": passed,
+            "failed_tests": failed,
+            "by_type": list(by_type.values()),
+        })
+
+    return {"runs": runs_out}
 
 
 # ── GET PDF ───────────────────────────────────────────────────────────────────
@@ -247,14 +332,17 @@ async def verify_traceability(
     project, story, feature = await _get_story_context(project_id, story_id, db)
     requirement = _load_json(story.requirement_analysis)
 
-    # Fetch TestRun records for accurate counts
-    run_ids_result = await db.execute(
-        select(ExecutionRun.id).where(ExecutionRun.project_id == project_id)
+    # Fetch TestRun records from latest run only
+    latest_run_result = await db.execute(
+        select(ExecutionRun)
+        .where(ExecutionRun.project_id == project_id)
+        .order_by(ExecutionRun.started_at.desc())
+        .limit(1)
     )
-    run_ids = [r[0] for r in run_ids_result.fetchall()]
+    latest_run = latest_run_result.scalar_one_or_none()
     test_runs = []
-    if run_ids:
-        tr_result = await db.execute(select(TestRun).where(TestRun.execution_run_id.in_(run_ids)))
+    if latest_run:
+        tr_result = await db.execute(select(TestRun).where(TestRun.execution_run_id == latest_run.id))
         test_runs = tr_result.scalars().all()
 
     workspace = project.workspace_path or ""

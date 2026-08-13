@@ -110,7 +110,7 @@ RULES
 7. Reuse/modify existing code where possible.
 8. If repository_empty=true, plan from scratch using visible conventions.
 9. Keep changes minimal and map them to approved acceptance criteria.
-10. Include test strategy only as Day 3 handoff; do not replace Aegis testing here.
+10. Include test strategy only as Test Intelligence handoff; do not replace Aegis testing here.
 11. No parallel-execution fields are required.
 12. Return ONLY valid JSON.
 
@@ -148,7 +148,7 @@ Return exactly:
   "test_strategy": [
     {{
       "type": "unit | integration | boundary | negative",
-      "target": "what Day 3 should verify",
+      "target": "what Test Intelligence should verify",
       "cases": ["case"]
     }}
   ],

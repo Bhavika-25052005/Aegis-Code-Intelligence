@@ -431,7 +431,7 @@ onMounted(loadPlan)
 
         <!-- Test Strategy -->
         <section class="bg-white dark:bg-gray-800 rounded-xl border p-5">
-          <h3 class="font-semibold mb-4">Test Strategy for Day 3</h3>
+          <h3 class="font-semibold mb-4">Test Strategy</h3>
           <div v-for="(strategy, index) in plan.test_strategy" :key="index" class="mb-4">
             <strong class="text-sm uppercase">{{ strategy.type }}</strong>
             <p class="text-sm">{{ strategy.target }}</p>

@@ -240,6 +240,7 @@ Aegis-Code-Intelligence/
 ├── backend/                         FastAPI application
 │   ├── requirements.txt
 │   ├── pyproject.toml
+│   ├── validate_quality_traceability.py  Validation suite for Quality Traceability service
 │   └── app/
 │       ├── main.py                  App entry point, CORS, lifespan (DB init + orphan run cleanup)
 │       ├── config.py                Pydantic settings, auto-generates encryption key

@@ -136,7 +136,7 @@ async def _resolve_workspace(
     return str(workspace)
 
 
-# ── Day 1 endpoints ──────────────────────────────────────────────────────────
+# ── Requirement Intelligence endpoints ───────────────────────────────────────
 
 @router.get("/{story_id}")
 async def get_analysis(
@@ -293,7 +293,7 @@ async def reopen_analysis(
     return story_analysis_response(project, feature, story)
 
 
-# ── Day 2 endpoints ──────────────────────────────────────────────────────────
+# ── Implementation Intelligence endpoints ────────────────────────────────────
 
 @router.get("/{story_id}/implementation-plan")
 async def get_implementation_plan(
