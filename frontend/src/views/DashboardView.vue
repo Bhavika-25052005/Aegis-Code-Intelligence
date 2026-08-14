@@ -1,4 +1,4 @@
-<script setup lang="ts">
+﻿<script setup lang="ts">
 import { onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { useProjectStore } from '../stores/project'
@@ -73,7 +73,7 @@ async function confirmDelete() {
         class="relative bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-5 hover:shadow-md transition-shadow cursor-pointer group"
         @click="router.push(`/projects/${project.id}/backlog`)"
       >
-        <!-- Delete button — visible on hover -->
+        <!-- Delete button - visible on hover -->
         <button
           @click="askDelete($event, project.id)"
           class="absolute top-3 right-3 p-1.5 rounded-lg text-gray-300 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/30 opacity-0 group-hover:opacity-100 transition-opacity"

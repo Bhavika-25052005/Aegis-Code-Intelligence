@@ -5,7 +5,7 @@ import traceback
 import uuid
 from datetime import datetime
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
@@ -64,26 +64,46 @@ async def get_active_test(project_id: str):
 
 
 @router.get("/runs", response_model=list[TestRunResponse])
-async def get_test_runs(project_id: str, db: AsyncSession = Depends(get_db)):
+async def get_test_runs(
+    project_id: str,
+    latest_only: bool = Query(default=False, description="Return only the latest execution run's test records"),
+    db: AsyncSession = Depends(get_db),
+):
     from app.models.execution import ExecutionRun
-
-    # Get runs from execution-based tests
-    run_ids = await db.execute(
-        select(ExecutionRun.id).where(ExecutionRun.project_id == project_id)
-    )
-    ids = [r[0] for r in run_ids.fetchall()]
-
-    # Get all test runs: both execution-linked and manual (execution_run_id is NULL)
     from sqlalchemy import or_
-    conditions = [TestRun.task_id.like("manual-%")]
-    if ids:
-        conditions.append(TestRun.execution_run_id.in_(ids))
 
-    result = await db.execute(
-        select(TestRun)
-        .where(or_(*conditions))
-        .order_by(TestRun.created_at.desc())
-    )
+    if latest_only:
+        # Only return TestRuns from the single most-recent execution run + manual runs
+        latest_result = await db.execute(
+            select(ExecutionRun)
+            .where(ExecutionRun.project_id == project_id)
+            .order_by(ExecutionRun.started_at.desc())
+            .limit(1)
+        )
+        latest_run = latest_result.scalar_one_or_none()
+        conditions = [TestRun.task_id.like("manual-%")]
+        if latest_run:
+            conditions.append(TestRun.execution_run_id == latest_run.id)
+        result = await db.execute(
+            select(TestRun)
+            .where(or_(*conditions))
+            .order_by(TestRun.created_at.desc())
+        )
+    else:
+        # Return all historical test runs (original behaviour)
+        run_ids = await db.execute(
+            select(ExecutionRun.id).where(ExecutionRun.project_id == project_id)
+        )
+        ids = [r[0] for r in run_ids.fetchall()]
+        conditions = [TestRun.task_id.like("manual-%")]
+        if ids:
+            conditions.append(TestRun.execution_run_id.in_(ids))
+        result = await db.execute(
+            select(TestRun)
+            .where(or_(*conditions))
+            .order_by(TestRun.created_at.desc())
+        )
+
     return result.scalars().all()
 
 

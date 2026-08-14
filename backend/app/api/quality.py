@@ -1,10 +1,10 @@
-"""
+﻿"""
 Quality Traceability + Delivery API.
 
 Endpoints:
-  GET  /projects/{project_id}/quality/{story_id}                 — full quality data
-  GET  /projects/{project_id}/quality/{story_id}/run-history     — execution run history
-  GET  /projects/{project_id}/quality/{story_id}/report.pdf      — filtered PDF
+  GET  /projects/{project_id}/quality/{story_id}                 - full quality data
+  GET  /projects/{project_id}/quality/{story_id}/run-history     - execution run history
+  GET  /projects/{project_id}/quality/{story_id}/report.pdf      - filtered PDF
   POST /projects/{project_id}/quality/{story_id}/verify-traceability
   POST /projects/{project_id}/quality/{story_id}/update-readme
   POST /projects/{project_id}/quality/{story_id}/push
@@ -32,10 +32,12 @@ from app.models.project import Project
 from app.models.testing import TestRun
 from app.services.crypto import decrypt_value, encrypt_value
 from app.services.quality_reporter import QualityReporter
+from app.services.code_quality import CodeQualityService
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/projects/{project_id}/quality", tags=["quality"])
 reporter = QualityReporter()
+_quality_svc = CodeQualityService()
 
 
 # ── Helpers ──────────────────────────────────────────────────────────────────
@@ -66,7 +68,79 @@ def _load_json(val: str) -> dict:
         return {}
 
 
-def _push_gate_check(story) -> str | None:
+def _summary_from_test_runs(test_runs: list, test_plan_json: str = "") -> dict:
+    """Build test summary from latest-run TestRun records + custom tests from test_plan.
+
+    Custom tests are run via the custom-test API and never create TestRun records;
+    they live only in story.test_plan with source_type='user_requested'.
+    Using TestRun records for unit/integration/regression prevents historical
+    accumulation from inflating the counts across multiple execution runs.
+    """
+    unit = sum(r.total_tests for r in test_runs if r.test_type == "unit")
+    integ_sys = sum(
+        r.total_tests for r in test_runs
+        if r.test_type in ("integration", "system", "quality")
+    )
+    regression = sum(r.total_tests for r in test_runs if r.test_type == "regression")
+    passed = sum(r.passed_tests for r in test_runs)
+    failed = sum(r.failed_tests for r in test_runs)
+
+    # Custom tests have no TestRun records - read from test_plan
+    custom = 0
+    custom_passed = 0
+    try:
+        tests = json.loads(test_plan_json).get("tests", []) if test_plan_json else []
+        custom_tests = [t for t in tests if t.get("source_type") == "user_requested"]
+        custom = len(custom_tests)
+        custom_passed = sum(1 for t in custom_tests if t.get("status") == "passed")
+    except Exception:
+        pass
+
+    return {
+        "unit": unit,
+        "integration_system": integ_sys,
+        "integration": integ_sys,
+        "system": 0,
+        "regression": regression,
+        "custom": custom,
+        "total": unit + integ_sys + regression + custom,
+        "passed": passed + custom_passed,
+        "failed": failed + (custom - custom_passed),
+    }
+
+
+def _build_test_run_summary(test_runs: list, test_plan_json: str = "") -> dict:
+    """Snapshot-friendly summary of the latest run for use in release readiness.
+    Stored inside the quality snapshot so readiness checks never read historical test_plan.
+    """
+    unit_failed = sum(r.failed_tests for r in test_runs if r.test_type == "unit")
+    integ_failed = sum(
+        r.failed_tests for r in test_runs
+        if r.test_type in ("integration", "system", "quality")
+    )
+    reg_failed = sum(r.failed_tests for r in test_runs if r.test_type == "regression")
+
+    custom_count = 0
+    custom_failed = 0
+    try:
+        tests = json.loads(test_plan_json).get("tests", []) if test_plan_json else []
+        custom_tests = [t for t in tests if t.get("source_type") == "user_requested"]
+        custom_count = len(custom_tests)
+        custom_failed = sum(1 for t in custom_tests if t.get("status") not in ("passed",))
+    except Exception:
+        pass
+
+    return {
+        "has_data": bool(test_runs),
+        "unit_failed": unit_failed,
+        "integ_failed": integ_failed,
+        "reg_failed": reg_failed,
+        "custom_count": custom_count,
+        "custom_failed": custom_failed,
+    }
+
+
+def _push_gate_check(story, code_quality_snapshot: dict | None = None) -> str | None:
     """Return blocking reason string or None if push is allowed."""
     if story.requirement_analysis_status != "approved":
         return "Requirement analysis is not approved"
@@ -78,6 +152,17 @@ def _push_gate_check(story) -> str | None:
             return "Not all story tasks are completed"
     if story.test_status not in ("passed",):
         return f"Quality gate has not passed (current status: {story.test_status})"
+    # Day 5: require release readiness
+    if code_quality_snapshot is None:
+        return "Run Quality Analysis first to enable push"
+    readiness = code_quality_snapshot.get("release_readiness", {})
+    if readiness.get("is_stale"):
+        return "Quality analysis is stale - refresh before pushing"
+    if readiness.get("status") != "ready":
+        blockers = readiness.get("blockers", [])
+        if blockers:
+            return f"Not release ready: {blockers[0]['message']}"
+        return "Release readiness checks not passed"
     return None
 
 
@@ -121,7 +206,7 @@ async def get_quality(
         for i, c in enumerate(ac_criteria)
     ]
 
-    # Build/restore traceability snapshot (cached — only recomputes when test_plan changes)
+    # Build/restore traceability snapshot (cached - only recomputes when test_plan changes)
     traceability_data = await reporter.ensure_traceability(
         story, requirement, project.workspace_path or "", test_runs=test_runs
     )
@@ -129,8 +214,9 @@ async def get_quality(
     await db.commit()
 
     traceability = {"tests": traceability_data["tests"]}
-    # Use summary from snapshot (already computed with TestRun records)
-    summary = traceability_data["summary"]
+    # Use TestRun records from the LATEST run + custom tests from test_plan.
+    # This prevents inflated counts from accumulated test_plan history.
+    summary = _summary_from_test_runs(test_runs, story.test_plan or "") if test_runs else traceability_data["summary"]
 
     # Filter
     filtered = reporter.filter_tests(
@@ -146,10 +232,25 @@ async def get_quality(
     start = (page - 1) * page_size
     page_tests = filtered[start : start + page_size]
 
-    # Push gate
-    push_blocked_reason = _push_gate_check(story)
+    # Day 5: load code quality snapshot and check staleness
+    cq_raw = story.code_quality_snapshot or ""
+    code_quality = _load_json(cq_raw)
+    quality_stale = False
+    release_readiness: dict = {}
+    if code_quality:
+        workspace = project.workspace_path or ""
+        saved_fp = code_quality.get("workspace_fingerprint", "")
+        if saved_fp:
+            current_fp = _quality_svc.workspace_fingerprint(workspace)
+            quality_stale = saved_fp != current_fp
+        if quality_stale and "release_readiness" in code_quality:
+            code_quality["release_readiness"]["is_stale"] = True
+        release_readiness = code_quality.get("release_readiness", {})
 
-    # README status — check if workspace has README.md
+    # Push gate (now Day 5-gated)
+    push_blocked_reason = _push_gate_check(story, code_quality if code_quality else None)
+
+    # README status - check if workspace has README.md
     readme_status = "unknown"
     if project.workspace_path:
         import pathlib
@@ -174,6 +275,10 @@ async def get_quality(
         "readme_status": readme_status,
         "repo_configured": repo_configured,
         "push_blocked_reason": push_blocked_reason,
+        # Day 5 additions
+        "code_quality": code_quality,
+        "quality_stale": quality_stale,
+        "release_readiness": release_readiness,
     }
 
 
@@ -295,7 +400,7 @@ async def download_report_pdf(
         "search": search,
     }
 
-    # Write to a temp file — FastAPI FileResponse handles cleanup
+    # Write to a temp file - FastAPI FileResponse handles cleanup
     suffix = f"-{story.title[:20].replace(' ', '_')}.pdf"
     tmp = tempfile.NamedTemporaryFile(suffix=suffix, delete=False)
     tmp.close()
@@ -444,6 +549,142 @@ Do not commit or push.
     return {"status": "ok", "readme_present": readme_exists, "output": result.output[:500]}
 
 
+# ── POST analyze (Day 5) ─────────────────────────────────────────────────────
+
+@router.post("/{story_id}/analyze")
+async def analyze_quality(
+    project_id: str,
+    story_id: str,
+    db: AsyncSession = Depends(get_db),
+):
+    """Run Day 5 quality analysis: coverage + Claude code review + scores + release readiness."""
+    from app.services.websocket_manager import manager as ws_manager
+
+    project, story, feature = await _get_story_context(project_id, story_id, db)
+    workspace = project.workspace_path or ""
+
+    async def broadcast(step: str, message: str):
+        await ws_manager.broadcast(project_id, {
+            "type": "quality_progress",
+            "payload": {"step": step, "message": message, "story_id": story_id},
+        })
+
+    await broadcast("started", "Quality analysis started…")
+
+    # Fetch latest TestRun records once - used for summary + readiness checks
+    latest_run_result = await db.execute(
+        select(ExecutionRun)
+        .where(ExecutionRun.project_id == project_id)
+        .order_by(ExecutionRun.started_at.desc())
+        .limit(1)
+    )
+    latest_run = latest_run_result.scalar_one_or_none()
+    latest_test_runs = []
+    if latest_run:
+        tr_result = await db.execute(
+            select(TestRun).where(TestRun.execution_run_id == latest_run.id)
+        )
+        latest_test_runs = list(tr_result.scalars().all())
+
+    # 1. Coverage
+    await broadcast("coverage", "Running coverage analysis…")
+    try:
+        coverage = await _quality_svc.run_coverage(project, story, workspace)
+    except Exception as exc:
+        logger.warning("Coverage run error: %s", exc)
+        coverage = {"status": "error", "reason": str(exc)[:200], "tool": None}
+    await broadcast("coverage_done", f"Coverage: {coverage.get('status')} {coverage.get('overall', '') or ''}")
+
+    # 2. Claude code review
+    await broadcast("review", "Running Claude code review (read-only)…")
+    try:
+        review = await _quality_svc.run_code_review(project, story, workspace, coverage)
+    except Exception as exc:
+        logger.warning("Code review error: %s", exc)
+        review = {
+            "status": "error",
+            "findings": [],
+            "scores": _quality_svc.calculate_review_scores([]),
+            "summary": f"Review error: {str(exc)[:200]}",
+        }
+    n_findings = len(review.get("findings", []))
+    await broadcast("review_done", f"Review complete: {n_findings} finding(s)")
+
+    # 3. Build and persist snapshot (include test_run_summary for readiness checks)
+    fingerprint = _quality_svc.workspace_fingerprint(workspace)
+    snapshot: dict = {
+        "coverage": coverage,
+        "review": review,
+        "test_run_summary": _build_test_run_summary(latest_test_runs, story.test_plan or ""),
+        "generated_at": datetime.utcnow().isoformat(),
+        "workspace_fingerprint": fingerprint,
+    }
+
+    # 4. Release readiness (uses test_run_summary - not accumulated test_plan history)
+    await broadcast("readiness", "Calculating release readiness…")
+    readiness = _quality_svc.calculate_release_readiness(project, story, snapshot)
+    snapshot["release_readiness"] = readiness
+
+    # 5. Persist
+    story.code_quality_snapshot = json.dumps(snapshot)
+    await db.commit()
+    await db.refresh(story)
+
+    await broadcast("complete", f"Analysis complete - {'RELEASE READY' if readiness['status'] == 'ready' else 'NOT READY'}")
+
+    return {
+        "status": "ok",
+        "coverage": coverage,
+        "review": {
+            "findings": review.get("findings", []),
+            "scores": review.get("scores", {}),
+            "summary": review.get("summary", ""),
+        },
+        "release_readiness": readiness,
+        "workspace_fingerprint": fingerprint,
+        "generated_at": snapshot["generated_at"],
+    }
+
+
+# ── GET findings (filtered) ───────────────────────────────────────────────────
+
+@router.get("/{story_id}/findings")
+async def get_findings(
+    project_id: str,
+    story_id: str,
+    search: str | None = Query(default=None),
+    severity: str | None = Query(default=None),
+    category: str | None = Query(default=None),
+    file: str | None = Query(default=None),
+    db: AsyncSession = Depends(get_db),
+):
+    """Return filtered code review findings from persisted snapshot."""
+    _, story, _ = await _get_story_context(project_id, story_id, db)
+    cq = _load_json(story.code_quality_snapshot or "")
+    findings: list[dict] = cq.get("review", {}).get("findings", [])
+
+    # Apply filters
+    if search:
+        s = search.lower()
+        findings = [
+            f for f in findings
+            if s in f.get("finding", "").lower()
+            or s in f.get("file", "").lower()
+            or s in f.get("recommendation", "").lower()
+        ]
+    if severity:
+        findings = [f for f in findings if f.get("severity") == severity.lower()]
+    if category:
+        findings = [f for f in findings if f.get("category") == category.lower()]
+    if file:
+        findings = [f for f in findings if file.lower() in f.get("file", "").lower()]
+
+    counts = {sev: sum(1 for f in cq.get("review", {}).get("findings", []) if f.get("severity") == sev)
+              for sev in ("critical", "high", "medium", "low")}
+
+    return {"findings": findings, "total": len(findings), "counts": counts}
+
+
 # ── POST push to repo ─────────────────────────────────────────────────────────
 
 class PushRequest(BaseModel):
@@ -461,8 +702,9 @@ async def push_to_repo(
 ):
     project, story, feature = await _get_story_context(project_id, story_id, db)
 
-    # Push gate
-    blocked = _push_gate_check(story)
+    # Push gate (Day 5-gated)
+    cq_snap = _load_json(story.code_quality_snapshot or "")
+    blocked = _push_gate_check(story, cq_snap if cq_snap else None)
     if blocked:
         raise HTTPException(status_code=400, detail=f"Push blocked: {blocked}")
 
@@ -470,7 +712,7 @@ async def push_to_repo(
     if not workspace:
         raise HTTPException(status_code=400, detail="No workspace configured")
 
-    # Resolve credentials — prefer existing project config; accept override from request
+    # Resolve credentials - prefer existing project config; accept override from request
     repo_url = project.github_repo_url or body.repo_url
     if not repo_url:
         raise HTTPException(
@@ -487,7 +729,7 @@ async def push_to_repo(
 
     if not pat and body.pat:
         pat = body.pat
-        # Persist new credentials securely — never log the PAT
+        # Persist new credentials securely - never log the PAT
         project.github_repo_url = repo_url
         project.github_pat_encrypted = encrypt_value(body.pat)
         await db.commit()
@@ -507,7 +749,7 @@ async def push_to_repo(
     except Exception as exc:
         raise HTTPException(status_code=401, detail=f"Repository validation failed: {str(exc)[:200]}")
 
-    # Determine branch — use existing current branch from orchestrator convention or default
+    # Determine branch - use existing current branch from orchestrator convention or default
     branch = f"codegen/story/{story.title[:30].lower().replace(' ', '-')}"
 
     try:
@@ -515,7 +757,7 @@ async def push_to_repo(
     except Exception as exc:
         logger.warning("Branch creation: %s", exc)
 
-    commit_msg = body.commit_message or f"feat: {story.title} — Aegis delivery"
+    commit_msg = body.commit_message or f"feat: {story.title} - Aegis delivery"
     try:
         github.commit_and_push(workspace, commit_msg, branch)
     except Exception as exc:

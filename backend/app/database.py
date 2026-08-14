@@ -130,6 +130,13 @@ async def init_db():
                             "ADD COLUMN quality_snapshot_hash VARCHAR(64) DEFAULT ''"
                         )
                     )
+                if "code_quality_snapshot" not in existing_columns:
+                    connection.execute(
+                        text(
+                            "ALTER TABLE user_stories "
+                            "ADD COLUMN code_quality_snapshot TEXT DEFAULT ''"
+                        )
+                    )
 
             # Day 2 - projects columns
             if "projects" in tables:

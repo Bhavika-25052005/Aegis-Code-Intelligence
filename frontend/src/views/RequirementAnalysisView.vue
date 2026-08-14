@@ -1,4 +1,4 @@
-<script setup lang="ts">
+﻿<script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import axios from 'axios'
@@ -44,7 +44,7 @@ const analyzing = ref(false)
 const approving = ref(false)
 const error = ref('')
 
-// Edit state — which card is being edited and its draft content
+// Edit state - which card is being edited and its draft content
 const editingSection = ref<SectionKey | 'summary' | null>(null)
 const editDraft = ref<string[]>([])
 const editSummaryDraft = ref('')

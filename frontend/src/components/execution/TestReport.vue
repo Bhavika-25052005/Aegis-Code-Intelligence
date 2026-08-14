@@ -31,7 +31,9 @@ const triggerError = ref('')
 async function fetchTestRuns() {
   loading.value = true
   try {
-    const { data } = await api.get(`/projects/${props.projectId}/tests/runs`)
+    const { data } = await api.get(`/projects/${props.projectId}/tests/runs`, {
+      params: { latest_only: true },
+    })
     testRuns.value = data
   } finally {
     loading.value = false

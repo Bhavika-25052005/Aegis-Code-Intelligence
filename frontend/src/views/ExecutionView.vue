@@ -1,4 +1,4 @@
-<script setup lang="ts">
+﻿<script setup lang="ts">
 import { onMounted, ref, watch, computed } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useExecutionStore } from '../stores/execution'
@@ -108,7 +108,7 @@ watch(messages, (msgs) => {
     executionStore.addLog(`[REPAIR ${payload.passed ? 'PASS' : 'FAIL'}] Attempt ${payload.attempt} complete`)
   } else if (latest.type === 'story_quality_gate') {
     const payload = latest.payload as { story_id: string; status: string; total?: number; failed?: number }
-    executionStore.addLog(`[QUALITY GATE] ${payload.status.toUpperCase()}${payload.total !== undefined ? ` — ${(payload.total ?? 0) - (payload.failed ?? 0)}/${payload.total} passed` : ''}`)
+    executionStore.addLog(`[QUALITY GATE] ${payload.status.toUpperCase()}${payload.total !== undefined ? ` - ${(payload.total ?? 0) - (payload.failed ?? 0)}/${payload.total} passed` : ''}`)
   } else if (latest.type === 'needs_human_review') {
     const payload = latest.payload as { story_id?: string; task_id?: string; reason: string }
     executionStore.addLog(`[NEEDS REVIEW] ${payload.reason}`)
@@ -168,7 +168,7 @@ async function runCustomTest() {
       { objective: customObjective.value.trim() }
     )
     customResult.value = resp.data
-    executionStore.addLog(`[CUSTOM TEST] ${resp.data.status.toUpperCase()} — ${resp.data.file}`)
+    executionStore.addLog(`[CUSTOM TEST] ${resp.data.status.toUpperCase()} - ${resp.data.file}`)
   } catch (e: unknown) {
     const err = e as { response?: { data?: { detail?: string } } }
     executionStore.addLog(`[CUSTOM TEST ERROR] ${err.response?.data?.detail || 'Unknown error'}`)
@@ -178,7 +178,7 @@ async function runCustomTest() {
 }
 
 // All tasks in the selected story, sourced directly from the backlog store.
-// This means the list is always complete — even tasks that completed before
+// This means the list is always complete - even tasks that completed before
 // the WebSocket connected are shown.
 const allStoryTasks = computed(() => {
   const features = backlogStore.backlog?.features ?? []
@@ -229,7 +229,7 @@ function getStatusIcon(status: string) {
     >
       <i class="pi pi-info-circle"></i>
       <span v-if="storyIdFilter">Running <strong>all tasks in selected user story</strong>.</span>
-      <span v-if="skipTests">Test runner is <strong>disabled</strong> — code will be generated without running tests.</span>
+      <span v-if="skipTests">Test runner is <strong>disabled</strong> - code will be generated without running tests.</span>
     </div>
 
     <div class="flex items-center justify-between">
@@ -305,7 +305,7 @@ function getStatusIcon(status: string) {
       </div>
     </div>
 
-    <!-- Task Status List — shows ALL story tasks, seeded from backlog on load -->
+    <!-- Task Status List - shows ALL story tasks, seeded from backlog on load -->
     <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-5">
       <h3 class="font-semibold text-gray-800 dark:text-white mb-3">Task Progress</h3>
 
@@ -354,7 +354,7 @@ function getStatusIcon(status: string) {
     <!-- Test Results -->
     <TestReport ref="testReportRef" :project-id="projectId" />
 
-    <!-- Custom Test Panel — shown only when a story is selected -->
+    <!-- Custom Test Panel - shown only when a story is selected -->
     <section v-if="storyIdFilter" class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-5">
       <h3 class="font-semibold text-gray-800 dark:text-white">Custom Test</h3>
       <p class="text-sm text-gray-500 dark:text-gray-400 mt-1">
