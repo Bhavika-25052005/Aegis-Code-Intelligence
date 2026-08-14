@@ -92,3 +92,36 @@ class RepositoryFile(Base):
         "Project",
         back_populates="repository_files",
     )
+
+
+class GraphNode(Base):
+    __tablename__ = "graph_nodes"
+    __table_args__ = (
+        UniqueConstraint("project_id", "story_id", "node_key", name="uq_graph_node"),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    project_id: Mapped[str] = mapped_column(String(36), ForeignKey("projects.id", ondelete="CASCADE"), index=True)
+    story_id: Mapped[str | None] = mapped_column(String(36), nullable=True, index=True)
+    node_key: Mapped[str] = mapped_column(String(500))
+    node_type: Mapped[str] = mapped_column(String(50))
+    label: Mapped[str] = mapped_column(String(500))
+    file_path: Mapped[str | None] = mapped_column(String(1000), nullable=True)
+    metadata_json: Mapped[str] = mapped_column(Text, default="{}")
+    graph_version: Mapped[int] = mapped_column(Integer, default=1)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
+class GraphEdge(Base):
+    __tablename__ = "graph_edges"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid.uuid4()))
+    project_id: Mapped[str] = mapped_column(String(36), ForeignKey("projects.id", ondelete="CASCADE"), index=True)
+    story_id: Mapped[str | None] = mapped_column(String(36), nullable=True, index=True)
+    source_key: Mapped[str] = mapped_column(String(500))
+    target_key: Mapped[str] = mapped_column(String(500))
+    relation_type: Mapped[str] = mapped_column(String(50))
+    metadata_json: Mapped[str] = mapped_column(Text, default="{}")
+    graph_version: Mapped[int] = mapped_column(Integer, default=1)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)

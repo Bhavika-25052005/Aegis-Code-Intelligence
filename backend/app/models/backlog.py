@@ -79,6 +79,17 @@ class UserStory(Base):
     # Code Quality - Day 5 analysis snapshot (coverage + review + release readiness)
     code_quality_snapshot: Mapped[str] = mapped_column(Text, default="")
 
+    # Data Model (generated alongside implementation plan)
+    data_model: Mapped[str] = mapped_column(Text, default="")
+    data_model_status: Mapped[str] = mapped_column(String(20), default="not_generated")
+    data_model_approved_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+
+    # Knowledge Graph
+    graph_status: Mapped[str] = mapped_column(String(20), default="not_generated")
+    graph_version: Mapped[int] = mapped_column(Integer, default=0)
+    graph_generated_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+    graph_fingerprint: Mapped[str] = mapped_column(String(64), default="")
+
     order: Mapped[int] = mapped_column(Integer, default=0)
     status: Mapped[str] = mapped_column(String(50), default="pending")
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)

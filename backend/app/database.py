@@ -160,5 +160,42 @@ async def init_db():
                         )
                     )
 
+            # Data Model columns
+            if "user_stories" in tables:
+                us_dm = {c["name"] for c in inspector.get_columns("user_stories")}
+                if "data_model" not in us_dm:
+                    connection.execute(text(
+                        "ALTER TABLE user_stories ADD COLUMN data_model TEXT DEFAULT ''"
+                    ))
+                if "data_model_status" not in us_dm:
+                    connection.execute(text(
+                        "ALTER TABLE user_stories ADD COLUMN data_model_status VARCHAR(20) DEFAULT 'not_generated'"
+                    ))
+                if "data_model_approved_at" not in us_dm:
+                    connection.execute(text(
+                        "ALTER TABLE user_stories ADD COLUMN data_model_approved_at DATETIME"
+                    ))
+
+            # Knowledge Graph - user_stories graph status columns
+            if "user_stories" in tables:
+                us_cols = {c["name"] for c in inspector.get_columns("user_stories")}
+                if "graph_status" not in us_cols:
+                    connection.execute(text(
+                        "ALTER TABLE user_stories ADD COLUMN graph_status VARCHAR(20) DEFAULT 'not_generated'"
+                    ))
+                if "graph_version" not in us_cols:
+                    connection.execute(text(
+                        "ALTER TABLE user_stories ADD COLUMN graph_version INTEGER DEFAULT 0"
+                    ))
+                if "graph_generated_at" not in us_cols:
+                    connection.execute(text(
+                        "ALTER TABLE user_stories ADD COLUMN graph_generated_at DATETIME"
+                    ))
+                if "graph_fingerprint" not in us_cols:
+                    connection.execute(text(
+                        "ALTER TABLE user_stories ADD COLUMN graph_fingerprint VARCHAR(64) DEFAULT ''"
+                    ))
+
         await conn.run_sync(_migrate)
+        from app.models.project import GraphNode, GraphEdge  # noqa: F401 - register tables
         await conn.run_sync(Base.metadata.create_all)

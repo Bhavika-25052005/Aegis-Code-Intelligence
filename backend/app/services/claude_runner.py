@@ -50,14 +50,21 @@ class ClaudeRunner:
 
     def _run_sync(self, shell_cmd: str, prompt: str) -> ClaudeResult:
         try:
+            # Force UTF-8 on Windows — default CP1252 can't encode arrows/em-dashes etc.
+            env = os.environ.copy()
+            env["PYTHONIOENCODING"] = "utf-8"
+            env["PYTHONUTF8"] = "1"
             proc = subprocess.run(
                 shell_cmd,
                 input=prompt,
                 capture_output=True,
                 text=True,
+                encoding="utf-8",
+                errors="replace",
                 cwd=self.workspace_path,
                 timeout=self.timeout,
                 shell=True,
+                env=env,
             )
 
             output = proc.stdout

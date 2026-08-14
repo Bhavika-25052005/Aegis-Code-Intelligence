@@ -1,8 +1,10 @@
 import json
 from datetime import datetime
 from pathlib import Path
+from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query, Response
+from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
@@ -13,6 +15,9 @@ from app.models.backlog import Feature, UserStory
 from app.models.project import Project
 from app.services.crypto import decrypt_value
 from app.services.github_service import GitHubService
+from app.services.data_model_generator import DataModelGenerator, DataModelGenerationError
+from app.services.data_model_serializer import DataModelSerializer
+from app.services.knowledge_graph import KnowledgeGraphService
 from app.services.requirement_analyzer import (
     RequirementAnalyzer,
     RequirementAnalysisError,
@@ -27,6 +32,10 @@ router = APIRouter(
     prefix="/projects/{project_id}/requirements",
     tags=["Requirement Intelligence"],
 )
+
+
+class DataModelGenerateRequest(BaseModel):
+    user_prompt: Optional[str] = None
 
 
 async def get_story_context(
@@ -314,6 +323,9 @@ async def get_implementation_plan(
         "implementation_plan": _load_json_object(story.implementation_plan),
         "implementation_plan_status": story.implementation_plan_status,
         "approved_at": story.implementation_plan_approved_at,
+        "data_model": _load_json_object(story.data_model),
+        "data_model_status": story.data_model_status,
+        "data_model_approved_at": story.data_model_approved_at,
     }
 
 
@@ -377,6 +389,28 @@ async def generate_implementation_plan(
     await db.commit()
     await db.refresh(story)
 
+    # Auto-generate data model alongside the plan (non-blocking)
+    try:
+        from app.services.data_model_generator import DataModelGenerator, DataModelGenerationError
+        existing_dm = _load_json_object(story.data_model)
+        dm_gen = DataModelGenerator(
+            workspace_path=workspace,
+            max_budget_usd=min(project.claude_max_budget_usd, 1.5),
+        )
+        data_model = await dm_gen.generate(
+            feature=feature, story=story,
+            requirement_analysis=requirement, implementation_plan=plan,
+            existing_data_model=existing_dm,
+            repository_context={"files": []},
+        )
+        story.data_model = json.dumps(data_model)
+        story.data_model_status = "draft"
+        story.data_model_approved_at = None
+        await db.commit()
+        await db.refresh(story)
+    except Exception as _dm_exc:
+        logger.warning("Data model auto-generation skipped: %s", _dm_exc)
+
     return {
         "project_id": project.id,
         "feature_id": feature.id,
@@ -387,6 +421,8 @@ async def generate_implementation_plan(
         "implementation_plan": plan,
         "implementation_plan_status": story.implementation_plan_status,
         "approved_at": story.implementation_plan_approved_at,
+        "data_model": _load_json_object(story.data_model),
+        "data_model_status": story.data_model_status,
     }
 
 
@@ -502,3 +538,236 @@ async def reopen_implementation_plan(
     story.implementation_plan_approved_at = None
     await db.commit()
     return {"status": "draft"}
+
+
+# ── Knowledge Graph ───────────────────────────────────────────────────────────
+
+from app.services.knowledge_graph import KnowledgeGraphService
+_kg_svc = KnowledgeGraphService()
+
+
+@router.get("/{story_id}/knowledge-graph")
+async def get_knowledge_graph(
+    project_id: str,
+    story_id: str,
+    focus_node: Optional[str] = Query(default=None),
+    depth: int = Query(default=1, ge=1, le=3),
+    node_types: Optional[str] = Query(default=None),
+    search: Optional[str] = Query(default=None),
+    db: AsyncSession = Depends(get_db),
+):
+    _, _, story = await get_story_context(project_id, story_id, db)
+    status = getattr(story, "graph_status", "not_generated") or "not_generated"
+
+    if status == "not_generated":
+        return {
+            "status": "not_generated",
+            "nodes": [],
+            "edges": [],
+            "stats": {"nodes": 0, "edges": 0},
+            "version": 0,
+            "generated_at": None,
+        }
+
+    types_filter = [t.strip() for t in node_types.split(",")] if node_types else None
+    graph = await _kg_svc.get_graph(
+        project_id=project_id,
+        story_id=story_id,
+        focus_node=focus_node,
+        depth=depth,
+        node_types=types_filter,
+        search=search,
+        db=db,
+    )
+    return {
+        "status": status,
+        "version": getattr(story, "graph_version", 0) or 0,
+        "generated_at": story.graph_generated_at.isoformat() if getattr(story, "graph_generated_at", None) else None,
+        **graph,
+    }
+
+
+@router.post("/{story_id}/knowledge-graph/generate")
+async def generate_knowledge_graph(
+    project_id: str,
+    story_id: str,
+    db: AsyncSession = Depends(get_db),
+):
+    project, _, story = await get_story_context(project_id, story_id, db)
+    if not _load_json_object(story.implementation_plan):
+        raise HTTPException(status_code=400, detail="Generate an implementation plan first.")
+    result = await _kg_svc.generate_initial_graph(project, story, db)
+    return {"status": "ok", **result}
+
+
+@router.post("/{story_id}/knowledge-graph/impact")
+async def analyze_impact(
+    project_id: str,
+    story_id: str,
+    node_key: str = Query(...),
+    depth: int = Query(default=2, ge=1, le=3),
+    db: AsyncSession = Depends(get_db),
+):
+    _, _, story = await get_story_context(project_id, story_id, db)
+    if (getattr(story, "graph_status", "not_generated") or "not_generated") == "not_generated":
+        raise HTTPException(status_code=400, detail="Generate the graph first.")
+    return await _kg_svc.analyze_impact(
+        project_id=project_id,
+        story_id=story_id,
+        node_key=node_key,
+        depth=depth,
+        db=db,
+    )
+
+
+@router.post("/{story_id}/knowledge-graph/enhance")
+async def enhance_knowledge_graph(
+    project_id: str,
+    story_id: str,
+    db: AsyncSession = Depends(get_db),
+):
+    """Use Claude to add semantic relationships (USES, CALLS, IMPLEMENTS) to the graph."""
+    project, _, story = await get_story_context(project_id, story_id, db)
+    if (getattr(story, "graph_status", "not_generated") or "not_generated") == "not_generated":
+        raise HTTPException(status_code=400, detail="Generate the base graph first.")
+
+    workspace = project.workspace_path or ""
+    result = await _kg_svc.enhance_with_claude(project, story, workspace, db)
+    return {"status": "ok", **result}
+
+
+# ── Data Model endpoints ──────────────────────────────────────────────────────
+
+from app.services.data_model_generator import DataModelGenerator, DataModelGenerationError
+from app.services.data_model_serializer import DataModelSerializer
+from fastapi.responses import Response as FastAPIResponse
+from pydantic import BaseModel as PydanticBaseModel
+
+
+class DataModelGenerateRequest(PydanticBaseModel):
+    user_prompt: Optional[str] = None
+
+
+@router.post("/{story_id}/data-model")
+async def generate_data_model(
+    project_id: str,
+    story_id: str,
+    body: DataModelGenerateRequest = DataModelGenerateRequest(),
+    db: AsyncSession = Depends(get_db),
+):
+    project, feature, story = await get_story_context(project_id, story_id, db)
+    plan = _load_json_object(story.implementation_plan)
+    if not plan:
+        raise HTTPException(status_code=400, detail="Generate an implementation plan first.")
+
+    req = _load_json_object(story.requirement_analysis) or {}
+    existing = _load_json_object(story.data_model)
+    workspace = project.workspace_path or ""
+
+    from app.models.project import RepositoryFile
+    rf_result = await db.execute(select(RepositoryFile).where(RepositoryFile.project_id == project_id))
+    repo_files = rf_result.scalars().all()
+    repo_context = {"files": [{"path": rf.relative_path, "category": rf.category} for rf in repo_files[:40]]}
+
+    generator = DataModelGenerator(workspace_path=workspace, max_budget_usd=min(project.claude_max_budget_usd, 1.5))
+    try:
+        data_model = await generator.generate(
+            feature=feature, story=story,
+            requirement_analysis=req, implementation_plan=plan,
+            existing_data_model=existing, repository_context=repo_context,
+            user_prompt=body.user_prompt,
+        )
+    except DataModelGenerationError as exc:
+        raise HTTPException(status_code=502, detail=str(exc))
+
+    story.data_model = json.dumps(data_model)
+    story.data_model_status = "draft"
+    story.data_model_approved_at = None
+    await db.commit()
+    return {"data_model": data_model, "data_model_status": "draft"}
+
+
+@router.patch("/{story_id}/data-model")
+async def update_data_model(
+    project_id: str, story_id: str, body: dict, db: AsyncSession = Depends(get_db),
+):
+    """Save an edited data model directly."""
+    _, _, story = await get_story_context(project_id, story_id, db)
+    validated = DataModelGenerator._validate(body)
+    story.data_model = json.dumps(validated)
+    if story.data_model_status == "approved":
+        story.data_model_status = "draft"
+        story.data_model_approved_at = None
+    await db.commit()
+    return {"data_model": validated, "data_model_status": story.data_model_status}
+
+
+@router.post("/{story_id}/data-model/upload")
+async def upload_data_model(
+    project_id: str, story_id: str,
+    file: "UploadFile" = None,
+    db: AsyncSession = Depends(get_db),
+):
+    """Upload a data model from a JSON/SQL/DBML file."""
+    from fastapi import UploadFile as FUploadFile, File as FFile
+    _, _, story = await get_story_context(project_id, story_id, db)
+    if file is None:
+        raise HTTPException(status_code=400, detail="No file provided.")
+    content = await file.read()
+    if len(content) > 1_048_576:
+        raise HTTPException(status_code=400, detail="File too large (max 1MB).")
+    filename = file.filename or "upload.json"
+    ext = filename.rsplit(".", 1)[-1].lower()
+
+    if ext == "json":
+        try:
+            raw = json.loads(content.decode("utf-8"))
+        except Exception as exc:
+            raise HTTPException(status_code=400, detail=f"Invalid JSON: {exc}")
+        data_model = DataModelGenerator._validate(raw)
+    else:
+        raise HTTPException(status_code=400, detail=f"Unsupported format '.{ext}'. Upload a .json file.")
+
+    story.data_model = json.dumps(data_model)
+    story.data_model_status = "draft"
+    story.data_model_approved_at = None
+    await db.commit()
+    return {"data_model": data_model, "data_model_status": "draft"}
+
+
+@router.post("/{story_id}/data-model/approve")
+async def approve_data_model(project_id: str, story_id: str, db: AsyncSession = Depends(get_db)):
+    _, _, story = await get_story_context(project_id, story_id, db)
+    if not story.data_model:
+        raise HTTPException(status_code=400, detail="No data model to approve.")
+    story.data_model_status = "approved"
+    story.data_model_approved_at = datetime.utcnow()
+    await db.commit()
+    return {"status": "approved", "data_model_status": "approved"}
+
+
+@router.post("/{story_id}/data-model/reopen")
+async def reopen_data_model(project_id: str, story_id: str, db: AsyncSession = Depends(get_db)):
+    _, _, story = await get_story_context(project_id, story_id, db)
+    story.data_model_status = "draft"
+    story.data_model_approved_at = None
+    await db.commit()
+    return {"status": "draft"}
+
+
+@router.get("/{story_id}/data-model/download")
+async def download_data_model(
+    project_id: str, story_id: str,
+    format: str = Query(default="json"),
+    db: AsyncSession = Depends(get_db),
+):
+    _, _, story = await get_story_context(project_id, story_id, db)
+    if not story.data_model:
+        raise HTTPException(status_code=404, detail="No data model exists.")
+    model = json.loads(story.data_model)
+    content = DataModelSerializer().serialize(model, format)
+    media = {"json": "application/json", "sql": "text/plain", "dbml": "text/plain"}.get(format, "text/plain")
+    return FastAPIResponse(
+        content=content, media_type=media,
+        headers={"Content-Disposition": f'attachment; filename="data_model.{format}"'},
+    )

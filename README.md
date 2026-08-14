@@ -1,126 +1,173 @@
 # Aegis — AI-Powered Code Intelligence Platform
 
-> Convert a product backlog into reviewed, tested, committed code — with human oversight at every stage.
-
-Built at the **Philips Global Hackathon** using Claude Code as the AI execution engine.
+> From a product backlog to deployment-ready, tested, reviewed code — with human oversight at every gate.
 
 ---
 
-## What Aegis Does
+## Overview
 
-Aegis is an end-to-end AI development assistant that takes a product backlog and drives it through five tightly integrated stages:
+Aegis is an end-to-end AI development platform that takes a product backlog and drives it through six tightly integrated stages. Every stage requires explicit human approval before proceeding. No code is generated until requirements are approved, a plan is approved, and a data model is in place.
 
 ```
-Import Backlog (Excel / CSV / JSON / YAML / Azure DevOps)
-        │
-        ▼
-┌─────────────────────────────────┐
-│  Requirement Intelligence       │  Claude analyses each user story → structured
-│                                 │  10-field contract → human edits & approves
-└────────────────┬────────────────┘
-                 │
-                 ▼
-┌─────────────────────────────────┐
-│  Implementation Planning        │  Claude scans repository metadata → produces
-│                                 │  dependency-safe task plan → human approves
-└────────────────┬────────────────┘
-                 │
-                 ▼
-┌─────────────────────────────────┐
-│  Code Generation                │  Claude writes code for every task in approved
-│                                 │  execution order, respecting dependencies
-└────────────────┬────────────────┘
-                 │
-                 ▼
-┌─────────────────────────────────┐
-│  Automated Testing & Self-Repair│  Requirement-aware unit tests per task,
-│                                 │  quality gate after story, repair loop (max 3),
-│                                 │  regression suite, custom NL test input
-└────────────────┬────────────────┘
-                 │
-                 ▼
-┌─────────────────────────────────┐
-│  Quality Traceability & Delivery│  AC → Test traceability explorer, filtered PDF
-│                                 │  report, Claude README update, Push to Repo
-└────────────────┬────────────────┘
-                 │
-                 ▼
-┌─────────────────────────────────┐
-│  Code Quality & Release         │  Real code coverage, Claude read-only review,
-│  Readiness                      │  deterministic scores, release readiness gate
-└─────────────────────────────────┘
-        │
-        ▼
-  Release Ready → GitHub Branch → Commit → Pull Request
+Backlog Import
+     ↓
+Requirement Intelligence  →  Human approves contract
+     ↓
+Implementation Planning   →  Human approves plan + data model
+     ↓
+Code Generation + Testing →  Self-repair loop, quality gate
+     ↓
+Quality Dashboard          →  Coverage, code review, traceability
+     ↓
+Deployment Readiness       →  8-gate checklist → Push to GitHub → PR
 ```
-
-No stage proceeds without human approval. No code is generated until the requirement contract and the implementation plan are both explicitly approved.
 
 ---
 
-## Key Features
+## Feature Set
 
-| Feature | Detail |
-|---|---|
-| **Authentication** | Secure login page with session persistence; profile avatar showing user initials; logout from header dropdown |
-| **Requirement Intelligence** | Claude produces summary, acceptance criteria, functional rules, edge cases, assumptions, dependencies, ambiguities, risks, open questions and risk level for every user story |
-| **Repository Intelligence** | Walks the workspace and builds a metadata-only index (symbols, imports, SHA-256, size) - never stores full source. Incremental refresh via git diff |
-| **Implementation Planning** | Claude (read-only tool access) produces a dependency-safe execution plan with file-level change descriptions and a test strategy |
-| **Dual Approval Gates** | Both requirement contract and implementation plan must be approved before execution starts |
-| **Requirement-Aware Code Generation** | Every Claude code-gen prompt carries the full approved requirement contract and approved plan as context |
-| **Test Intelligence** | Unit tests generated per task, mapped to acceptance criteria / functional rules / edge cases with traceability IDs |
-| **Self-Repair Loop** | Failing tests trigger a requirement-aware repair prompt; capped at 3 attempts, then marks Needs Human Review |
-| **Quality Gate** | After all story tasks complete - runs generated integration/system tests + any existing `tests/regression/` suite |
-| **Custom Natural-Language Tests** | Describe a test objective in plain English; Aegis generates, runs and retains it for regression |
-| **3-Tab Quality Dashboard** | Test Coverage (summary, run history, traceability), Code Coverage (metrics + review), Deployment (readiness checklist, README, GitHub push) |
-| **Test Traceability Explorer** | Every test mapped to its AC (3-strategy: test_id pattern, source text, keyword) - searchable, filterable, 10 per page with pagination |
-| **Downloadable PDF Report** | Filtered traceability view exported as a clean PDF with legend, active filters, test table and summary |
-| **Quality Snapshot Cache** | Traceability computed once and cached by hash - subsequent page loads are instant until tests change |
-| **Real Code Coverage** | Runs actual coverage tooling (pytest-cov / Vitest / Jest) in the target workspace; displays overall %, line/branch/function metrics and per-file table |
-| **Claude Code Review** | Read-only structured review across Maintainability, Readability, Error Handling, Architecture Fit and Security; findings paginated at 5 per page |
-| **Code Review Details** | Dedicated Details tab surfacing: Personal Info collected by code, Sensitive Info generated by application, Bad Code Practices |
-| **Deterministic Quality Scores** | Aegis calculates scores from findings (critical -25, high -15, medium -7, low -2 per category, min 0); overall = category average |
-| **Deployment Readiness Checklist** | 8-item deterministic gate: Requirements Contract Approval, Implementation Plan Generation, Code Coverage (>70%), Code Review, No Critical Security Flaws, Tests Passing, Deployment Guide (README), GitHub Configuration |
-| **Stale Detection** | Workspace fingerprint (Git HEAD + dirty state) invalidates quality snapshot when code changes; push stays disabled until refresh |
-| **README Auto-Update** | Claude inspects the workspace and updates README.md based on completed implementation before delivery |
-| **GitHub Push & PR** | Quality-gated delivery - requires all 8 readiness checks passed; auto-creates branch and pull request |
-| **Azure DevOps Import** | WIQL query import of Feature / User Story / Task work items |
-| **Real-Time Dashboard** | WebSocket-powered execution view with per-task status, live logs, test results and repair history |
+### Authentication
+- Login page with session persistence (localStorage)
+- Profile avatar with user initials in the header
+- Secure logout from the dropdown
+
+**Credentials:** `Bhavika.Bandu@Philips.com` / `test`
 
 ---
 
-## Prerequisites
+### Requirement Intelligence
+Claude analyses each user story and produces a structured 10-field contract:
+- Summary, Acceptance Criteria, Functional Rules, Edge Cases
+- Assumptions, Dependencies, Ambiguities, Risks, Open Questions, Risk Level
 
-- Python 3.11+
-- Node.js 18+
-- Claude Code CLI installed and authenticated
+Human edits inline, then **Approves** to lock the contract. Editing after approval resets the plan.
 
-```bash
-npm install -g @anthropic-ai/claude-code
-claude --version
+---
+
+### Implementation Planning
+Claude scans repository metadata (read-only) and produces:
+- Dependency-safe ordered task execution plan
+- File-level planned changes (create / modify / reuse) with purpose
+- Architecture observations and test strategy
+
+Human approves the plan before code generation starts.
+
+---
+
+### Data Model
+Generated automatically alongside the implementation plan. Claude designs the full entity-relationship schema:
+- **Entities** — tables with all fields (name, type, PK, nullable, unique, indexed, default, description)
+- **Relationships** — one-to-many, many-to-one, many-to-many, one-to-one with FK and ON DELETE
+- **Enums** — separate enum definitions with value descriptions
+- **Change log** — incremental enhancement tracking across stories
+
+**Views:** Interactive table (expandable entities) + VueFlow ER diagram
+
+**Editing:** Click any field row to edit inline — change name, type, nullable, unique, indexed. Add/remove fields and entities without regenerating.
+
+**Import:** Upload a `.json` file (Aegis format) to bring in an existing schema.
+
+**Export:** Download in JSON, SQL (`CREATE TABLE`), or DBML format.
+
+**Code generation** receives the approved data model as context — Claude uses the exact field names and types when writing models and schemas.
+
+---
+
+### Knowledge Graph
+Claude reads the workspace and generates an interactive architecture graph:
+- **Nodes:** file, service, model, api, controller, frontend, task, acceptance_criterion
+- **Edges:** IMPORTS, DEPENDS_ON, USES, CALLS, MODIFIES, IMPLEMENTS, CONTAINS, VALIDATES_BY
+- Each node has a one-sentence Claude-generated description shown on click
+
+**Rendering:** vis-network physics simulation — nodes auto-space, arrows render correctly
+
+**Interactions:** Click node → detail panel (description, depends-on, used-by, file path). Analyze Impact → shows risk (LOW/MEDIUM/HIGH) and affected files/tasks/ACs.
+
+**Filters:** Node type toggle, search, layout switch (force/hierarchy), depth selector for impact analysis.
+
+Available in the **Implementation Plan** page (architecture graph) and **Quality & Delivery** page (enriched with test traceability after code runs).
+
+---
+
+### Code Generation + Automated Testing
+
+Execution runs each approved task in dependency order:
+
 ```
+Task → Claude generates code
+     → Test Intelligence generates unit tests (mapped to ACs)
+     → Tests run natively (pytest / npm test)
+     → PASS → next task
+     → FAIL → repair prompt (max 3 attempts) → PASS or Needs Human Review
+
+After all tasks complete (story quality gate):
+     → Integration/system tests generated and run
+     → Regression suite (tests/regression/) runs if present
+     → Combined result: PASS or repair loop
+```
+
+**Custom tests:** Describe an objective in plain English → Aegis generates, runs and retains it for regression.
+
+---
+
+### Quality Dashboard
+
+Three-tab view available after execution:
+
+**Tab 1 — Test Coverage**
+- Test summary by type (Unit, Integration, System, Regression, Custom)
+- Run history with per-type pass/fail breakdown
+- Test Traceability Explorer — every test mapped to its AC with search, filters, 10 per page, PDF download
+
+**Tab 2 — Code Coverage**
+- Real coverage metrics from pytest-cov / Vitest / Jest — never estimated
+- Per-file coverage table with progress bars
+- Code Review: 5 findings per page with filters (severity, category, file, free text)
+- Code Review Details tab: Personal Info collected, Sensitive Info generated, Bad Code Practices
+
+**Tab 3 — Deployment**
+- **Deployment Readiness Checklist** — 8 deterministic gates (all must pass):
+  1. Requirements Contract Approval
+  2. Implementation Plan Generation
+  3. Code Coverage > 70%
+  4. Code Review completed
+  5. No Critical Security Flaws
+  6. Tests Passing
+  7. Deployment Guide (README)
+  8. GitHub Configuration
+- README auto-generation / update via Claude
+- GitHub push: creates branch, commits, opens Pull Request
 
 ---
 
 ## Quick Start
 
-### 1. Backend
+### Prerequisites
+- Python 3.11+
+- Node.js 18+
+- Claude Code CLI
+
+```bash
+npm install -g @anthropic-ai/claude-code
+claude login
+```
+
+### Backend
 
 ```bash
 cd backend
-
-# Create and activate virtual environment
 python -m venv .venv
-source .venv/Scripts/activate        # Git Bash / macOS / Linux
-# .\.venv\Scripts\Activate.ps1       # Windows PowerShell
+.venv\Scripts\activate.bat        # Windows CMD
+# source .venv/Scripts/activate   # Git Bash / macOS
 
 pip install -r requirements.txt
+cp ../.env.example .env
 python -m uvicorn app.main:app --port 8001
 ```
 
 Swagger UI: `http://127.0.0.1:8001/docs`
 
-### 2. Frontend
+### Frontend
 
 ```bash
 cd frontend
@@ -128,15 +175,9 @@ npm install
 npm run dev
 ```
 
-Open `http://localhost:5173`
+Open **`http://localhost:5173`**
 
-**Login credentials:**
-| Field | Value |
-|---|---|
-| Email | `Bhavika.Bandu@Philips.com` |
-| Password | `test` |
-
-> **Note:** If port 8001 conflicts, change `--port 8001` in the backend command and update the two `8001` references in `frontend/vite.config.ts`.
+> If port 8001 conflicts, change `--port 8001` in the backend command and update both `8001` references in `frontend/vite.config.ts`.
 
 ---
 
@@ -148,118 +189,75 @@ cp .env.example backend/.env
 
 | Variable | Default | Purpose |
 |---|---|---|
-| `DATABASE_URL` | `sqlite+aiosqlite:///./codegen_hub.db` | SQLite database path |
+| `DATABASE_URL` | `sqlite+aiosqlite:///./codegen_hub.db` | SQLite database |
 | `WORKSPACE_PATH` | system temp dir | Where repos are cloned and code is written |
-| `ENCRYPTION_KEY` | auto-generated on first run | Fernet key for encrypting stored PATs |
-| `claude_timeout_seconds` | `300` | Claude CLI subprocess timeout per invocation |
-| `claude_max_budget_usd` | `5.0` | Max spend per Claude invocation |
-| `claude_max_retries` | `3` | Max retries on partial Claude results |
+| `ENCRYPTION_KEY` | auto-generated | Fernet key for encrypting stored GitHub PATs |
+| `claude_timeout_seconds` | `300` | Claude CLI timeout per call |
+| `claude_max_budget_usd` | `5.0` | Max spend per Claude call |
 
 ---
 
 ## Usage Walkthrough
 
-### Step 1 — Create a Project
+### 1. Create a Project
+Dashboard → **New Project** → name, local workspace path, optional GitHub URL + PAT, optional Azure DevOps connection, PR strategy.
 
-Go to **Dashboard → New Project**. Fill in:
-- Project name
-- Local workspace path (e.g. `C:\workspace\my-project`) — this is where code will be written
-- Optionally: GitHub repo URL + Personal Access Token for branch/commit/PR creation
-- Optionally: Azure DevOps org URL + project + PAT for backlog import
-- PR strategy: per task / per story / per feature
+### 2. Import a Backlog
+Backlog view → upload Excel / CSV / JSON / YAML, or connect Azure DevOps (WIQL).
 
-### Step 2 — Import a Backlog
+### 3. Requirement Intelligence
+Click **AI Analyze** on a User Story → review and edit the 10-field contract → **Approve**.
 
-In the **Backlog** view, upload a file or connect Azure DevOps.
+### 4. Implementation Planning
+Continue to Implementation Plan → **Generate Plan** → review tasks, architecture notes, planned files → optionally edit approaches → **Approve**.
 
-Supported formats:
+The **Data Model** tab generates automatically alongside the plan. Review entities, edit fields inline, approve the schema.
 
-| Format | Notes |
-|---|---|
-| **Excel (.xlsx)** | Hierarchical columns (Feature / User Story / Task) or flat with a `Type` column |
-| **CSV** | Same structure as Excel |
-| **JSON / YAML** | Nested `features → user_stories → tasks` |
-| **Azure DevOps** | WIQL query — fetches Feature / User Story / Task work items with parent links |
+View the **Knowledge Graph** tab to understand architecture dependencies and planned change impact before writing code.
 
-### Step 3 — Requirement Intelligence
+### 5. Code Generation
+Click **Generate Code + Tests** (or code-only). Watch live execution in the dashboard — tasks, test results, repair attempts, quality gate.
 
-1. In the Backlog view, click **AI Analyze** on any User Story
-2. Claude analyses the story (no file access — read-only mode) and produces:
-   - Summary, Acceptance Criteria, Functional Rules, Edge Cases
-   - Assumptions, Dependencies, Ambiguities, Risks, Open Questions, Risk Level
-3. Edit any field inline
-4. Click **Approve** — this locks the contract and enables implementation planning
+### 6. Custom Tests (optional)
+Describe a test objective in plain English on the Execution page → Aegis generates and runs it, retaining for regression.
 
-> Editing an approved requirement automatically invalidates the implementation plan, requiring re-generation.
+### 7. Quality Analysis
+Click **Quality & Delivery** → click **Refresh Quality Analysis** to run coverage + code review. Review the three tabs (Test Coverage, Code Coverage, Deployment).
 
-### Step 4 — Implementation Planning
+### 8. Deploy
+On the Deployment tab: once all 8 readiness checks pass, configure your GitHub repo (URL + PAT) and click **Push to GitHub** → branch is created and a Pull Request is opened automatically.
 
-1. From the Requirement view, click **Continue to Implementation Plan**
-2. Click **Generate Plan** — Claude scans the workspace metadata and produces:
-   - Ordered task list with `execution_order` and `depends_on` relationships
-   - Per-task planned file changes (create / modify / reuse) with purpose descriptions
-   - Architecture observations and test strategy
-3. Edit any section inline
-4. Click **Approve Implementation Plan**
+---
 
-### Step 5 — Code Generation + Testing
-
-Click **Generate Code + Tests** (or **Generate Code Only** to skip tests).
-
-The execution dashboard shows the full pipeline in real time:
+## Architecture
 
 ```
-[CLAUDE] Invoking Claude Code CLI for: Create Patient Model
-[CLAUDE] Code generated: Create Patient Model
-[CLAUDE] Generating requirement-aware unit tests for: Create Patient Model
-[CLAUDE] Generated 12 unit test(s) across 1 file(s): tests/unit/test_patient_model.py
-[CLAUDE] Running 1 unit test file(s)...
-[✓ PASS] unit tests: 12/12 passed
-
-[CLAUDE] Invoking Claude Code CLI for: Create Patient Service
-[CLAUDE] Code generated: Create Patient Service
-[CLAUDE] Generating requirement-aware unit tests for: Create Patient Service
-[CLAUDE] Generated 8 unit test(s) across 1 file(s): tests/unit/test_patient_service.py
-[✗ FAIL] unit tests: 6/8 passed
-[REPAIR] Attempt 1/3
-[✓ PASS] unit tests: 8/8 passed (after fix #1)
-
-[CLAUDE] Quality gate starting for 'Register Patient'
-[CLAUDE] Quality gate — running integration/system tests...
-[CLAUDE] Regression: no tests/regression folder found — skipped (0 tests)
-[✓ PASS] Quality Tests: 20/20 passed
+Browser (Vue 3)
+    │ REST (axios)          WebSocket
+    ▼                           ▼
+FastAPI (uvicorn :8001)  ◄──────────────────────┐
+    │                                            │
+    ├── Requirement Analysis API                 │
+    │       └── RequirementAnalyzerService       │
+    │                                            │
+    ├── Implementation Plan API                  │
+    │       ├── RepositoryIntelligence           │
+    │       ├── ImplementationPlannerService     │
+    │       ├── DataModelGenerator               │
+    │       └── KnowledgeGraphService            │
+    │                                            │
+    ├── Execution API                            │
+    │       └── Orchestrator (asyncio)           │
+    │               ├── ClaudeRunner  ───────────┘ WebSocket broadcasts
+    │               ├── TestIntelligence
+    │               └── TestRunnerService
+    │
+    ├── Quality API
+    │       ├── QualityReporter (traceability, PDF)
+    │       └── CodeQualityService (coverage, review, readiness)
+    │
+    └── SQLite (aiosqlite / SQLAlchemy async)
 ```
-
-### Step 6 — Custom Tests (Optional)
-
-On the Execution page, scroll to **Custom Test**. Type a natural-language objective:
-
-> `Test that a patient cannot be registered without a date of birth`
-
-Aegis generates an executable test, runs it, and retains it for future regression runs.
-
-### Step 7 — Quality & Delivery
-
-When execution completes, click **Quality & Delivery** (purple button). The page is organised into three tabs:
-
-**Tab 1 - Test Coverage**
-- **Test Summary** — counts by type: Unit, Integration, System, Regression, Custom, Total, Passed
-- **Run History** — expandable history of all execution runs with per-type pass/fail breakdown
-- **Test Traceability Explorer** — every test mapped to its acceptance criterion (AC1, AC2, ...) with search, filter by AC / type / status, 10 per page with pagination arrows
-- **Download Filtered PDF** — exports the current filtered view as a PDF
-
-**Tab 2 - Code Coverage**
-- **Coverage Metrics** — overall %, statements, functions, branches from real tool output (pytest-cov / Vitest / Jest)
-- **File Coverage Table** — per-file coverage with progress bars
-- **Code Review - Findings** — structured findings across 5 categories, 5 per page with pagination arrows
-- **Code Review - Details** — three dedicated sections: Personal Info collected by code, Sensitive Info generated by application, Bad Code Practices
-
-**Tab 3 - Deployment**
-- **Deployment Readiness Checklist** — 8-item gate showing pass/fail for each item (all must pass before push is enabled)
-- **Deployment Guide (README)** — generate or update the workspace README.md using Claude
-- **GitHub Configuration** — push quality-gated code to a branch and auto-create a Pull Request
-
-Click **Refresh Quality Analysis** to run coverage analysis and Claude code review before checking deployment readiness.
 
 ---
 
@@ -267,247 +265,68 @@ Click **Refresh Quality Analysis** to run coverage analysis and Claude code revi
 
 ```
 Aegis-Code-Intelligence/
-│
-├── backend/                         FastAPI application
+├── backend/
 │   ├── requirements.txt
-│   ├── pyproject.toml
-│   ├── validate_quality_traceability.py  Validation suite for Quality Traceability service
 │   └── app/
-│       ├── main.py                  App entry point, CORS, lifespan (DB init + orphan run cleanup)
-│       ├── config.py                Pydantic settings, auto-generates encryption key
-│       ├── database.py              Async SQLAlchemy engine + inline schema migrations
-│       │
+│       ├── main.py                     App entry, CORS, lifespan
+│       ├── config.py                   Pydantic settings
+│       ├── database.py                 Async SQLAlchemy + inline migrations
 │       ├── models/
-│       │   ├── project.py           Project ORM model, RepositoryFile (metadata index)
-│       │   ├── backlog.py           Feature, UserStory (req + plan + test + quality fields), Task
-│       │   ├── execution.py         ExecutionRun, PullRequest
-│       │   └── testing.py           TestRun, TestReport
-│       │
-│       ├── schemas/
-│       │   ├── project.py           Pydantic request/response schemas for projects
-│       │   ├── backlog.py           Backlog import and tree response schemas
-│       │   ├── execution.py         ExecutionStartRequest, ExecutionStatusResponse
-│       │   └── testing.py           TestRun/Report responses, CustomTestRequest/Response
-│       │
+│       │   ├── project.py              Project, RepositoryFile, GraphNode, GraphEdge
+│       │   ├── backlog.py              Feature, UserStory, Task
+│       │   ├── execution.py            ExecutionRun, PullRequest
+│       │   └── testing.py              TestRun, TestReport
 │       ├── api/
-│       │   ├── __init__.py          Aggregates all routers under /api prefix
-│       │   ├── projects.py          GET/POST/PUT/DELETE /api/projects
-│       │   ├── backlog.py           Backlog upload, Azure DevOps import, tree view
-│       │   ├── requirement_analysis.py  Requirement + implementation plan endpoints
-│       │   ├── execution.py         Start/pause/resume/reset execution, status
-│       │   ├── testing.py           Test runs, reports, custom test endpoint
-│       │   ├── quality.py           Quality explorer, PDF report, traceability, README, push
-│       │   ├── github.py            GitHub repo validation, branch listing
-│       │   └── websocket.py         WebSocket endpoint for live execution events
-│       │
+│       │   ├── requirement_analysis.py Requirement, Plan, DataModel, KnowledgeGraph endpoints
+│       │   ├── execution.py            Start/pause/resume/reset
+│       │   ├── testing.py              Test runs, custom tests
+│       │   ├── quality.py              Traceability, coverage, review, push
+│       │   └── websocket.py            Live execution events
 │       └── services/
-│           ├── requirement_analyzer.py   Sends story to Claude (no tools) → 10-field JSON contract
-│           ├── repository_intelligence.py  Metadata-only workspace index, incremental git-diff refresh
-│           ├── implementation_planner.py   Claude (Read/Glob/Grep) → dependency-safe task plan
-│           ├── orchestrator.py             Main execution engine — approval gates, dependency
-│           │                               ordering, code gen loop, test integration
-│           ├── test_intelligence.py        Generates requirement-aware test files via Claude
-│           │                               (unit per task, integration/system per story, custom)
-│           ├── test_runner.py              Runs tests natively (sys.executable + PYTHONPATH),
-│           │                               framework detection, quality gate, regression discovery
-│           ├── quality_reporter.py         AC→test traceability (3-strategy mapping), summary
-│           │                               from TestRun records, snapshot cache, ReportLab PDF
-│           ├── code_quality.py             Day 5 — real coverage runner, Claude read-only review,
-│           │                               deterministic scoring, release readiness, stale detection
-│           ├── prompt_builder.py           All Claude prompt construction — task, test, repair,
-│           │                               quality gate, continuation, verification
-│           ├── claude_runner.py            Subprocess wrapper for Claude Code CLI, JSON output parsing
-│           ├── github_service.py           GitPython + GitHub REST API — clone, branch, commit, push, PR
-│           ├── backlog_parser.py           Excel/CSV/JSON/YAML → Feature/UserStory/Task tree
-│           ├── azure_devops.py             WIQL query runner, batch work item fetch, hierarchy builder
-│           ├── ci_generator.py             Writes .github/workflows/ci.yml if absent
-│           ├── manual_test_runner.py       On-demand regression / PR-branch test runs
-│           ├── websocket_manager.py        WebSocket connection registry and broadcaster
-│           └── crypto.py                   Fernet encryption/decryption for stored PATs
-│
-├── frontend/                        Vue 3 application
+│           ├── requirement_analyzer.py      Claude → 10-field contract
+│           ├── repository_intelligence.py   Metadata-only workspace index
+│           ├── implementation_planner.py    Claude → dependency-safe task plan
+│           ├── data_model_generator.py      Claude → entity-relationship schema
+│           ├── data_model_serializer.py     JSON / SQL / DBML export
+│           ├── knowledge_graph.py           Architecture graph builder
+│           ├── orchestrator.py              Main execution engine
+│           ├── test_intelligence.py         Requirement-aware test generation
+│           ├── test_runner.py               Native test execution + repair
+│           ├── quality_reporter.py          Traceability, snapshot cache, PDF
+│           ├── code_quality.py              Coverage runner, Claude review, scoring
+│           ├── prompt_builder.py            All Claude prompt construction
+│           ├── claude_runner.py             Subprocess wrapper for Claude CLI
+│           ├── github_service.py            Clone, branch, commit, push, PR
+│           └── crypto.py                   Fernet encryption for PATs
+├── frontend/
 │   ├── package.json
-│   ├── vite.config.ts               Dev server proxy → backend :8001
-│   ├── tailwind.config.js
+│   ├── vite.config.ts                  Dev proxy → backend :8001
 │   └── src/
-│       ├── main.ts                  Vue app bootstrap — Pinia, Router, PrimeVue (Aura theme)
-│       ├── App.vue
-│       ├── router/index.ts          8 routes: Dashboard, ProjectSetup, Backlog,
-│       │                            RequirementAnalysis, ImplementationPlan, Execution, Quality, Settings
-│       ├── api/client.ts            Axios instance with baseURL /api
 │       ├── composables/
-│       │   ├── useAuth.ts           Auth state (login/logout/session persistence via localStorage)
-│       │   └── useWebSocket.ts      WebSocket composable with auto-reconnect
-│       ├── stores/
-│       │   ├── project.ts           Project CRUD state (Pinia)
-│       │   ├── backlog.ts           Backlog fetch, upload, ADO import state
-│       │   └── execution.ts         Execution start/pause/resume, status, logs
-│       ├── types/index.ts           TypeScript interfaces for all domain objects
+│       │   ├── useAuth.ts              Session auth (localStorage)
+│       │   └── useWebSocket.ts         Auto-reconnect WebSocket
 │       ├── views/
-│       │   ├── LoginView.vue        Authentication page (split layout, session persistence)
-│       │   ├── DashboardView.vue    Project cards with delete confirmation
-│       │   ├── ProjectSetupView.vue Create project — name, workspace, GitHub, ADO, strategy
-│       │   ├── BacklogView.vue      Feature/Story/Task tree, upload, ADO import
-│       │   ├── RequirementAnalysisView.vue  10-field contract editor + approve/reopen
-│       │   ├── ImplementationPlanView.vue   Plan viewer/editor + approve + launch execution
-│       │   ├── ExecutionView.vue    Live execution dashboard — task progress, logs,
-│       │   │                        test results, custom test panel, Continue to Quality button
-│       │   ├── QualityView.vue      3-tab quality dashboard: Test Coverage (summary, run history,
-│       │   │                        traceability), Code Coverage (metrics, review + details),
-│       │   │                        Deployment (readiness checklist, README, GitHub push)
-│       │   └── SettingsView.vue     Project settings editor
-│       └── components/
-│           ├── backlog/
-│           │   ├── BacklogTree.vue      Collapsible Feature/Story/Task tree with AI Analyze
-│           │   ├── BacklogUploader.vue  Drag-and-drop file upload
-│           │   └── AzureDevOpsConnect.vue  ADO WIQL import form
-│           ├── execution/
-│           │   └── TestReport.vue       Test run history table with manual trigger panel
-│           └── layout/
-│               ├── AppLayout.vue    Shell with sidebar and content area
-│               ├── AppHeader.vue    Title, user profile avatar with initials, logout dropdown
-│               └── AppSidebar.vue   Navigation links
-│
-├── docs/
-│   ├── sample_backlog.xlsx          Sample backlog for testing
-│   ├── sample_backlog.yaml          Same backlog in YAML format
-│   └── feature2_prescriptions.xlsx  Prescription feature sample backlog
-│
-└── .env.example                     Environment variable template
-```
-
----
-
-## Architecture
-
-### Data Flow
-
-```
-Browser (Vue 3)
-    │  REST (axios)          WebSocket
-    ▼                            ▼
-FastAPI (uvicorn)  ◄────────────────────────────────┐
-    │                                               │
-    ├── Requirement Analysis API                    │
-    │       └── RequirementAnalyzerService          │
-    │               └── ClaudeRunner (no tools)     │
-    │                                               │
-    ├── Implementation Plan API                     │
-    │       ├── RepositoryIntelligence              │
-    │       └── ImplementationPlannerService        │
-    │               └── ClaudeRunner (Read/Glob/Grep)│
-    │                                               │
-    ├── Execution API                               │
-    │       └── Orchestrator (asyncio background)   │
-    │               ├── ClaudeRunner (all tools)  ──┘ WS broadcasts
-    │               ├── TestIntelligence             (via WebSocketManager)
-    │               │       └── ClaudeRunner (Bash/Read/Write/Edit/Glob/Grep)
-    │               ├── TestRunnerService
-    │               │       └── subprocess pytest / npm test
-    │               └── GitHubService
-    │
-    └── SQLite (aiosqlite / SQLAlchemy async)
-```
-
-### Approval Gates
-
-```
-User Story
-    │
-    ├── [GATE 1] requirement_analysis_status == "approved"
-    │               ↓ blocked if not approved
-    ├── [GATE 2] implementation_plan_status == "approved"
-    │               ↓ blocked if not approved
-    └── Execution starts
-            │
-            └── Per-task dependency check (depends_on from approved plan)
-                    ↓ blocked if dependency not completed
-```
-
-### Test Pipeline
-
-```
-Per Task:
-  Claude builds task code
-      → TestIntelligence generates unit tests (mapped to AC/FR/EC)
-          → pytest runs test files natively (sys.executable)
-              → PASS: next task
-              → FAIL: repair loop (max 3) → PASS or Needs Human Review
-
-After all tasks complete (Story Quality Gate):
-  TestIntelligence generates integration/system tests
-      → Claude runs generated tests
-      → If tests/regression/ exists → pytest runs those files natively
-      → Combined result → PASS or repair loop (max 3)
-```
-
----
-
-## API Reference
-
-### Projects
-```
-GET    /api/projects
-POST   /api/projects
-GET    /api/projects/{id}
-PUT    /api/projects/{id}
-DELETE /api/projects/{id}
-```
-
-### Backlog
-```
-POST   /api/projects/{id}/backlog/upload
-POST   /api/projects/{id}/backlog/azure-devops
-GET    /api/projects/{id}/backlog
-DELETE /api/projects/{id}/backlog/features/{feature_id}
-```
-
-### Requirement & Plan
-```
-GET    /api/projects/{id}/requirements/{story_id}
-POST   /api/projects/{id}/requirements/{story_id}/analyze
-PATCH  /api/projects/{id}/requirements/{story_id}
-POST   /api/projects/{id}/requirements/{story_id}/approve
-POST   /api/projects/{id}/requirements/{story_id}/reopen
-GET    /api/projects/{id}/requirements/{story_id}/implementation-plan
-POST   /api/projects/{id}/requirements/{story_id}/implementation-plan
-PATCH  /api/projects/{id}/requirements/{story_id}/implementation-plan
-POST   /api/projects/{id}/requirements/{story_id}/implementation-plan/approve
-POST   /api/projects/{id}/requirements/{story_id}/implementation-plan/reopen
-```
-
-### Execution
-```
-POST   /api/projects/{id}/execute
-POST   /api/projects/{id}/execute/pause
-POST   /api/projects/{id}/execute/resume
-POST   /api/projects/{id}/execute/reset
-GET    /api/projects/{id}/execute/status
-```
-
-### Testing
-```
-GET    /api/projects/{id}/tests/runs
-GET    /api/projects/{id}/tests/reports
-GET    /api/projects/{id}/tests/latest-report
-POST   /api/projects/{id}/tests/trigger
-POST   /api/projects/{id}/tests/{story_id}/custom-test
-```
-
-### Quality & Delivery
-```
-GET    /api/projects/{id}/quality/{story_id}
-GET    /api/projects/{id}/quality/{story_id}/report.pdf
-POST   /api/projects/{id}/quality/{story_id}/verify-traceability
-POST   /api/projects/{id}/quality/{story_id}/update-readme
-POST   /api/projects/{id}/quality/{story_id}/push
-POST   /api/projects/{id}/quality/{story_id}/analyze      — Day 5: coverage + review + readiness
-GET    /api/projects/{id}/quality/{story_id}/findings     — Day 5: filtered findings explorer
-```
-
-### WebSocket
-```
-WS     /ws/projects/{id}/progress
+│       │   ├── LoginView.vue           Authentication page
+│       │   ├── DashboardView.vue       Project cards
+│       │   ├── BacklogView.vue         Feature/Story/Task tree, import
+│       │   ├── RequirementAnalysisView.vue  10-field contract editor
+│       │   ├── ImplementationPlanView.vue   Plan + Data Model + Knowledge Graph tabs
+│       │   ├── ExecutionView.vue        Live dashboard, custom test panel
+│       │   ├── QualityView.vue          3-tab quality dashboard
+│       │   └── SettingsView.vue
+│       ├── components/
+│       │   ├── implementation/
+│       │   │   ├── DataModelTable.vue   Expandable entity table with inline editing
+│       │   │   └── DataModelDiagram.vue VueFlow ER diagram
+│       │   ├── execution/
+│       │   │   └── TestReport.vue       Test run history + manual trigger
+│       │   ├── layout/
+│       │   │   ├── AppLayout.vue
+│       │   │   ├── AppHeader.vue        Profile avatar + logout dropdown
+│       │   │   └── AppSidebar.vue
+│       │   └── KnowledgeGraphPanel.vue  vis-network graph with detail panel
+│       └── types/index.ts               All TypeScript interfaces
+└── .env.example
 ```
 
 ---
@@ -517,30 +336,15 @@ WS     /ws/projects/{id}/progress
 | Layer | Technology |
 |---|---|
 | AI Engine | Claude Code CLI (Anthropic) |
-| Backend | FastAPI 0.110+, Python 3.11+ |
-| ORM | SQLAlchemy 2 async + aiosqlite |
-| Database | SQLite (file-based, zero config) |
-| Frontend | Vue 3 + Vite 5 |
-| State | Pinia |
-| UI Components | PrimeVue 4 (Aura theme) + Tailwind CSS 3 |
+| Backend | FastAPI 0.115+, Python 3.11+ |
+| Database | SQLite via SQLAlchemy 2 async + aiosqlite |
+| Frontend | Vue 3 + Vite 5 + TypeScript |
+| UI Components | PrimeVue 4 (Aura theme) + Tailwind CSS 3.4 |
+| Graph Visualization | vis-network (architecture graph), Vue Flow (ER diagram) |
+| State Management | Pinia |
 | HTTP Client | Axios |
-| Real-time | WebSockets (native FastAPI + useWebSocket composable) |
-| Git | GitPython + GitHub REST API |
-| Encryption | Python cryptography (Fernet) |
+| Real-time | WebSockets (FastAPI native) |
+| Git Integration | GitPython + GitHub REST API |
+| Coverage | pytest-cov / Vitest / Jest |
 | PDF Generation | ReportLab 5 |
-| Testing | pytest, subprocess-based native runner |
-
----
-
-## Contributing
-
-1. Fork the repository
-2. Create a feature branch: `git checkout -b feature/your-feature`
-3. Commit your changes: `git commit -m "feat: description"`
-4. Push and open a Pull Request
-
----
-
-## License
-
-MIT
+| Encryption | Python cryptography (Fernet) |

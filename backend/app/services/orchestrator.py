@@ -383,9 +383,10 @@ class Orchestrator:
                     logger.warning(f"Branch creation failed: {e}")
                     await self._broadcast("claude_output", {"message": f"Branch creation skipped: {e}"})
 
-        # Build prompt with Day 2 requirement + plan context
+        # Build prompt with Day 2 requirement + plan context + data model
         requirement = self._load_json_object(user_story.requirement_analysis)
         plan = self._load_json_object(user_story.implementation_plan)
+        data_model = self._load_json_object(getattr(user_story, "data_model", "") or "")
 
         relevant_paths = []
         for item in plan.get("relevant_files", []):
@@ -412,6 +413,7 @@ class Orchestrator:
             repo_context=repo_context,
             requirement_analysis=requirement if requirement else None,
             implementation_plan=plan if plan else None,
+            data_model=data_model if data_model and data_model.get("entities") else None,
         )
         runner = ClaudeRunner(workspace or ".", project.claude_max_budget_usd)
         self._current_runner = runner

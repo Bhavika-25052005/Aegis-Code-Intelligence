@@ -12,6 +12,7 @@ class PromptBuilder:
         repo_context: str = "",
         requirement_analysis: dict | None = None,
         implementation_plan: dict | None = None,
+        data_model: dict | None = None,
     ) -> str:
         sections = []
 
@@ -91,6 +92,46 @@ class PromptBuilder:
                         + ": "
                         + change.get("purpose", "")
                     )
+
+        # Approved Data Model
+        if data_model and data_model.get("entities"):
+            sections.append("\n# APPROVED DATA MODEL")
+            sections.append(f"\n## Summary\n{data_model.get('summary', '')}")
+            for entity in data_model["entities"][:20]:
+                name = entity.get("name", "")
+                desc = entity.get("description", "")
+                header = f"\n### {name}"
+                if desc:
+                    header += f"  # {desc}"
+                sections.append(header)
+                fields = entity.get("fields", [])
+                if fields:
+                    field_lines = []
+                    for f in fields:
+                        pk = " [PK]" if f.get("primary_key") else ""
+                        nullable = "" if f.get("nullable", True) else " NOT NULL"
+                        unique = " UNIQUE" if f.get("unique") else ""
+                        comment = f"  # {f['description']}" if f.get("description") else ""
+                        field_lines.append(f"  - {f['name']}: {f.get('type','')}{pk}{nullable}{unique}{comment}")
+                    sections.append("\n".join(field_lines))
+                rels = entity.get("relationships", [])
+                if rels:
+                    rel_lines = [
+                        f"  - {r.get('type','').replace('_',' ')} {r.get('target_entity','')} (FK: {r.get('foreign_key','')})"
+                        for r in rels
+                    ]
+                    sections.append("  Relationships:\n" + "\n".join(rel_lines))
+            enums = data_model.get("enums", [])
+            if enums:
+                sections.append("\n### Enums")
+                for enum in enums:
+                    vals = ", ".join(v["name"] for v in enum.get("values", []))
+                    sections.append(f"  - {enum['name']}: {vals}")
+            sections.append(
+                "\nIMPORTANT: Use the exact entity names, field names, types and "
+                "relationships defined in the Data Model above when writing models, "
+                "schemas, and database code."
+            )
 
         sections.append("\n## Instructions")
         sections.append(

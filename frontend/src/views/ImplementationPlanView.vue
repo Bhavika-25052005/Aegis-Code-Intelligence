@@ -3,6 +3,9 @@ import { computed, onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import axios from 'axios'
 import api from '../api/client'
+import KnowledgeGraphPanel from '../components/KnowledgeGraphPanel.vue'
+import DataModelTable from '../components/implementation/DataModelTable.vue'
+import DataModelDiagram from '../components/implementation/DataModelDiagram.vue'
 
 const route = useRoute()
 const router = useRouter()
@@ -15,6 +18,78 @@ const loading = ref(true)
 const planning = ref(false)
 const approving = ref(false)
 const error = ref('')
+const activeTab = ref<'plan' | 'datamodel' | 'graph'>('plan')
+
+// ── Data Model ─────────────────────────────────────────────────────────────
+const dataModel = computed(() => data.value?.data_model ?? null)
+const dataModelStatus = computed(() => data.value?.data_model_status ?? 'not_generated')
+const dataModelView = ref<'table' | 'diagram'>('table')
+const generatingModel = ref(false)
+const approvingModel = ref(false)
+const showDownloadMenu = ref(false)
+
+async function generateDataModel() {
+  generatingModel.value = true
+  error.value = ''
+  try {
+    const res = await api.post(`/projects/${projectId}/requirements/${storyId}/data-model`)
+    data.value = { ...data.value, data_model: res.data.data_model, data_model_status: res.data.data_model_status }
+  } catch (err: unknown) {
+    if (axios.isAxiosError(err)) error.value = err.response?.data?.detail || err.message
+  } finally {
+    generatingModel.value = false
+  }
+}
+
+async function approveDataModel() {
+  approvingModel.value = true
+  try {
+    await api.post(`/projects/${projectId}/requirements/${storyId}/data-model/approve`)
+    data.value = { ...data.value, data_model_status: 'approved' }
+  } catch (err: unknown) {
+    if (axios.isAxiosError(err)) error.value = err.response?.data?.detail || err.message
+  } finally {
+    approvingModel.value = false
+  }
+}
+
+async function reopenDataModel() {
+  await api.post(`/projects/${projectId}/requirements/${storyId}/data-model/reopen`)
+  data.value = { ...data.value, data_model_status: 'draft' }
+}
+
+function downloadDataModel(fmt: string) {
+  showDownloadMenu.value = false
+  window.open(`/api/projects/${projectId}/requirements/${storyId}/data-model/download?format=${fmt}`, '_blank')
+}
+
+async function saveDataModel(updatedModel: any) {
+  try {
+    const res = await api.patch(`/projects/${projectId}/requirements/${storyId}/data-model`, updatedModel)
+    data.value = { ...data.value, data_model: res.data.data_model, data_model_status: res.data.data_model_status }
+  } catch (err: unknown) {
+    if (axios.isAxiosError(err)) error.value = err.response?.data?.detail || err.message
+  }
+}
+
+async function uploadDataModelFile(event: Event) {
+  const input = event.target as HTMLInputElement
+  if (!input.files?.length) return
+  const file = input.files[0]
+  const formData = new FormData()
+  formData.append('file', file)
+  input.value = ''
+  try {
+    const res = await api.post(
+      `/projects/${projectId}/requirements/${storyId}/data-model/upload`,
+      formData,
+      { headers: { 'Content-Type': 'multipart/form-data' } }
+    )
+    data.value = { ...data.value, data_model: res.data.data_model, data_model_status: res.data.data_model_status }
+  } catch (err: unknown) {
+    if (axios.isAxiosError(err)) error.value = err.response?.data?.detail || err.message
+  }
+}
 
 // Edit state
 const editingSection = ref<string | null>(null)
@@ -162,7 +237,148 @@ onMounted(loadPlan)
 </script>
 
 <template>
-  <div class="space-y-6">
+  <div class="space-y-4">
+
+    <!-- ── Tab Navigation ── -->
+    <div class="flex gap-1 border-b border-gray-200 dark:border-gray-700">
+      <button @click="activeTab = 'plan'"
+        :class="activeTab === 'plan' ? 'border-b-2 border-purple-500 text-purple-600 dark:text-purple-400 font-medium' : 'text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200'"
+        class="px-4 py-2.5 text-sm transition-colors">
+        Implementation Plan
+      </button>
+      <button @click="activeTab = 'datamodel'"
+        :class="activeTab === 'datamodel' ? 'border-b-2 border-purple-500 text-purple-600 dark:text-purple-400 font-medium' : 'text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200'"
+        class="px-4 py-2.5 text-sm transition-colors flex items-center gap-1.5">
+        <i class="pi pi-database text-xs"></i>
+        Data Model
+        <span v-if="dataModelStatus === 'approved'" class="text-xs bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-300 px-1.5 py-0.5 rounded-full">Approved</span>
+        <span v-else-if="dataModelStatus === 'draft'" class="text-xs bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300 px-1.5 py-0.5 rounded-full">Draft</span>
+      </button>
+      <button @click="activeTab = 'graph'"
+        :class="activeTab === 'graph' ? 'border-b-2 border-purple-500 text-purple-600 dark:text-purple-400 font-medium' : 'text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200'"
+        class="px-4 py-2.5 text-sm transition-colors flex items-center gap-1.5">
+        <i class="pi pi-sitemap text-xs"></i>
+        Knowledge Graph
+      </button>
+    </div>
+
+    <!-- ── Knowledge Graph tab ── -->
+    <template v-if="activeTab === 'graph'">
+      <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-5">
+        <KnowledgeGraphPanel :project-id="projectId" :story-id="storyId" mode="implementation" />
+      </div>
+    </template>
+
+    <!-- ── Data Model tab ── -->
+    <template v-else-if="activeTab === 'datamodel'">
+      <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-5 space-y-4">
+
+        <!-- Header -->
+        <div class="flex items-center justify-between flex-wrap gap-3">
+          <div>
+            <h3 class="font-semibold text-gray-800 dark:text-white">Data Model</h3>
+            <p class="text-xs text-gray-500 dark:text-gray-400 mt-0.5">Entity-relationship model generated from your implementation plan.</p>
+          </div>
+          <div class="flex items-center gap-2 flex-wrap">
+            <template v-if="dataModel">
+              <!-- Approve / Reopen -->
+              <button v-if="dataModelStatus !== 'approved'" @click="approveDataModel" :disabled="approvingModel"
+                class="flex items-center gap-1.5 px-3 py-1.5 text-xs rounded-lg bg-green-600 text-white hover:bg-green-700 disabled:opacity-50">
+                <i :class="approvingModel ? 'pi pi-spin pi-spinner' : 'pi pi-check'" class="text-xs"></i>
+                {{ approvingModel ? 'Approving...' : 'Approve Model' }}
+              </button>
+              <div v-else class="flex items-center gap-2">
+                <span class="flex items-center gap-1.5 text-xs text-green-600 dark:text-green-400 font-medium">
+                  <i class="pi pi-check-circle"></i> Approved v{{ dataModel.version }}
+                </span>
+                <button @click="reopenDataModel" class="text-xs px-3 py-1.5 rounded-lg border border-gray-300 dark:border-gray-600 text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700">
+                  Reopen
+                </button>
+              </div>
+              <!-- Export dropdown -->
+              <div class="relative">
+                <button @click="showDownloadMenu = !showDownloadMenu"
+                  class="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg border border-gray-300 dark:border-gray-600 text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700">
+                  <i class="pi pi-download text-xs"></i> Export <i class="pi pi-chevron-down text-xs"></i>
+                </button>
+                <div v-if="showDownloadMenu" class="absolute right-0 mt-1 w-28 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl shadow-lg z-20 overflow-hidden">
+                  <button @click="downloadDataModel('json')" class="w-full text-left px-3 py-2 text-xs hover:bg-gray-50 dark:hover:bg-gray-700 text-gray-700 dark:text-gray-300">JSON</button>
+                  <button @click="downloadDataModel('sql')" class="w-full text-left px-3 py-2 text-xs hover:bg-gray-50 dark:hover:bg-gray-700 text-gray-700 dark:text-gray-300">SQL</button>
+                  <button @click="downloadDataModel('dbml')" class="w-full text-left px-3 py-2 text-xs hover:bg-gray-50 dark:hover:bg-gray-700 text-gray-700 dark:text-gray-300">DBML</button>
+                </div>
+                <div v-if="showDownloadMenu" class="fixed inset-0 z-10" @click="showDownloadMenu = false"></div>
+              </div>
+            </template>
+            <!-- Import JSON -->
+            <label class="flex items-center gap-1.5 px-3 py-1.5 text-xs rounded-lg border border-gray-300 dark:border-gray-600 text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 cursor-pointer">
+              <i class="pi pi-upload text-xs"></i> Import JSON
+              <input type="file" accept=".json" class="hidden" @change="uploadDataModelFile" />
+            </label>
+            <!-- Generate / Regenerate -->
+            <button @click="generateDataModel" :disabled="generatingModel"
+              class="flex items-center gap-1.5 px-3 py-1.5 text-xs rounded-lg bg-purple-600 text-white hover:bg-purple-700 disabled:opacity-50">
+              <i :class="generatingModel ? 'pi pi-spin pi-spinner' : 'pi pi-sparkles'" class="text-xs"></i>
+              {{ generatingModel ? 'Generating...' : dataModel ? 'Regenerate' : 'Generate Data Model' }}
+            </button>
+          </div>
+        </div>
+
+        <!-- Empty state -->
+        <div v-if="!dataModel && !generatingModel"
+          class="flex flex-col items-center justify-center py-16 text-center bg-gray-50 dark:bg-gray-900/30 rounded-xl border-2 border-dashed border-gray-200 dark:border-gray-700">
+          <div class="w-14 h-14 rounded-2xl bg-purple-100 dark:bg-purple-900/30 flex items-center justify-center mb-4">
+            <i class="pi pi-database text-2xl text-purple-500"></i>
+          </div>
+          <h4 class="font-semibold text-gray-700 dark:text-gray-300 mb-1">No Data Model Yet</h4>
+          <p class="text-sm text-gray-500 dark:text-gray-400 max-w-xs mb-5">
+            Claude will analyse your implementation plan and design the full entity-relationship model — automatically generated when the plan is created.
+          </p>
+          <button @click="generateDataModel" class="px-5 py-2.5 rounded-xl bg-purple-600 text-white hover:bg-purple-700 text-sm font-medium flex items-center gap-2">
+            <i class="pi pi-sparkles"></i> Generate Data Model
+          </button>
+        </div>
+
+        <!-- Loading -->
+        <div v-else-if="generatingModel" class="flex flex-col items-center justify-center py-16">
+          <i class="pi pi-spin pi-spinner text-3xl text-purple-500 mb-3"></i>
+          <p class="text-sm text-gray-500 dark:text-gray-400">Claude is designing your data model...</p>
+          <p class="text-xs text-gray-400 mt-1">This takes 15-30 seconds</p>
+        </div>
+
+        <!-- Data model content -->
+        <template v-else-if="dataModel">
+          <!-- Stats row -->
+          <div class="flex items-center gap-5 text-xs text-gray-500 dark:text-gray-400 flex-wrap">
+            <span><span class="font-semibold text-gray-700 dark:text-gray-200">{{ dataModel.entities?.length ?? 0 }}</span> entities</span>
+            <span><span class="font-semibold text-gray-700 dark:text-gray-200">{{ dataModel.enums?.length ?? 0 }}</span> enums</span>
+            <span><span class="font-semibold text-gray-700 dark:text-gray-200">{{ dataModel.entities?.reduce((s:number, e:any) => s + (e.fields?.length ?? 0), 0) ?? 0 }}</span> total fields</span>
+            <span class="ml-auto text-gray-400">v{{ dataModel.version }} &middot; {{ dataModel.project_mode === 'new_project' ? 'New project' : 'Enhancement' }}</span>
+          </div>
+
+          <!-- View toggle -->
+          <div class="flex items-center gap-1 p-1 bg-gray-100 dark:bg-gray-700/50 rounded-lg w-fit">
+            <button @click="dataModelView = 'table'"
+              :class="dataModelView === 'table' ? 'bg-white dark:bg-gray-800 shadow-sm text-gray-800 dark:text-white font-medium' : 'text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200'"
+              class="px-3 py-1.5 rounded-md text-xs transition-colors flex items-center gap-1.5">
+              <i class="pi pi-table text-xs"></i> Table
+            </button>
+            <button @click="dataModelView = 'diagram'"
+              :class="dataModelView === 'diagram' ? 'bg-white dark:bg-gray-800 shadow-sm text-gray-800 dark:text-white font-medium' : 'text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200'"
+              class="px-3 py-1.5 rounded-md text-xs transition-colors flex items-center gap-1.5">
+              <i class="pi pi-share-alt text-xs"></i> Diagram
+            </button>
+          </div>
+
+          <DataModelTable v-if="dataModelView === 'table'" :model="dataModel" :readonly="dataModelStatus === 'approved'" @update="saveDataModel" />
+          <DataModelDiagram v-else :model="dataModel" />
+        </template>
+
+      </div>
+    </template>
+
+    <!-- ── Plan tab ── -->
+    <template v-else>
+
     <!-- Header -->
     <div class="flex items-start justify-between gap-4">
       <div>
@@ -508,5 +724,7 @@ onMounted(loadPlan)
         </section>
       </template>
     </template>
+    </template>
+
   </div>
 </template>

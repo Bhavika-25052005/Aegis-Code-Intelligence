@@ -94,7 +94,6 @@ const verifyMsg = ref('')
 const analyzeLoading = ref(false)
 const analyzeMsg = ref('')
 const analyzeError = ref('')
-const showAllChecks = ref(false)
 
 // Day 5 - Findings Explorer filters
 const findingSearch = ref('')
