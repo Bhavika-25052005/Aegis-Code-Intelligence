@@ -31,8 +31,6 @@ Deployment Readiness       →  8-gate checklist → Push to GitHub → PR
 - Profile avatar with user initials in the header
 - Secure logout from the dropdown
 
-**Credentials:** `Bhavika.Bandu@Philips.com` / `test`
-
 ---
 
 ### Requirement Intelligence
@@ -91,22 +89,41 @@ Available in the **Implementation Plan** page (architecture graph) and **Quality
 
 ### Code Generation + Automated Testing
 
-Execution runs each approved task in dependency order:
+Execution runs each approved task in dependency order. Each task goes through a full code-generate → test → repair cycle before the next task starts.
 
+**Per-task cycle:**
 ```
-Task → Claude generates code
-     → Test Intelligence generates unit tests (mapped to ACs)
-     → Tests run natively (pytest / npm test)
-     → PASS → next task
-     → FAIL → repair prompt (max 3 attempts) → PASS or Needs Human Review
-
-After all tasks complete (story quality gate):
-     → Integration/system tests generated and run
-     → Regression suite (tests/regression/) runs if present
-     → Combined result: PASS or repair loop
+1. Claude generates code for the task
+2. Test Intelligence generates requirement-aware unit tests
+   (mapped to Acceptance Criteria, Functional Rules, Edge Cases)
+3. Tests run natively (sys.executable for Python, npm for JS/TS)
+4. If PASS  → task marked complete, move to next task
+5. If FAIL  → Aegis builds a repair prompt with:
+              - the failing test output
+              - the original requirement contract
+              - the implementation plan context
+              Sends to Claude for a targeted fix
+6. Repair runs again (step 3)
+7. If PASS  → task complete
+8. If FAIL  → repeat steps 5-7 up to 3 total attempts
+9. After 3 failures → task marked "Needs Human Review"
+              Execution pauses. Human reviews the failure,
+              optionally edits the code, then resumes.
 ```
 
-**Custom tests:** Describe an objective in plain English → Aegis generates, runs and retains it for regression.
+**Story quality gate** (after all tasks complete):
+```
+1. Test Intelligence generates integration/system tests for the full story
+2. Tests run natively
+3. If tests/regression/ exists → regression suite runs automatically
+4. PASS → story quality gate passes, Quality & Delivery unlocked
+5. FAIL → same repair loop (max 3 attempts)
+6. After 3 failures → story marked "Needs Human Review"
+```
+
+**Custom tests:** Describe any test objective in plain English on the Execution page → Aegis generates an executable test, runs it immediately, and retains it in the regression suite for all future runs.
+
+**Test traceability:** Every generated test is mapped back to its Acceptance Criterion (AC) using a 3-strategy approach (test ID pattern, source text, keyword matching) — visible in the Test Traceability Explorer.
 
 ---
 
@@ -135,6 +152,9 @@ Three-tab view available after execution:
   6. Tests Passing
   7. Deployment Guide (README)
   8. GitHub Configuration
+
+  > All thresholds and gate conditions are configurable in `code_quality.py` (`DEFAULT_RELEASE_RULES`). The coverage threshold (default 70%), maximum allowed critical findings, and which gates are blocking can all be adjusted per project.
+
 - README auto-generation / update via Claude
 - GitHub push: creates branch, commits, opens Pull Request
 
