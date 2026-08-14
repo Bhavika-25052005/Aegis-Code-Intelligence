@@ -28,12 +28,19 @@ from app.services.data_model_generator import (
     DataModelGenerator,
     DataModelGenerationError,
 )
+from app.services.data_model_analyzer import DataModelAnalyzer
 from app.services.data_model_parser import DataModelParser, DataModelParseError
 from app.services.data_model_serializer import DataModelSerializer
 
 
 class DataModelGenerateRequest(BaseModel):
     user_prompt: Optional[str] = None
+    normalization: Optional[str] = None
+    optimizations: Optional[list[str]] = None
+
+
+class DataModelOptimizeRequest(BaseModel):
+    actions: list[str] = []
 
 
 class ImplementationPlanApproveRequest(BaseModel):
@@ -623,6 +630,8 @@ async def generate_data_model(
     )
 
     user_prompt = body.user_prompt if body else None
+    normalization = body.normalization if body else None
+    optimizations = body.optimizations if body else None
 
     try:
         data_model = await generator.generate(
@@ -633,6 +642,8 @@ async def generate_data_model(
             existing_model,
             repository_context,
             user_prompt=user_prompt,
+            normalization=normalization,
+            optimizations=optimizations,
         )
     except DataModelGenerationError as exc:
         raise HTTPException(status_code=502, detail=str(exc)) from exc
@@ -770,3 +781,70 @@ async def download_data_model(
         media_type=media_types[format],
         headers={"Content-Disposition": f'attachment; filename="{filename}"'},
     )
+
+
+@router.post("/{story_id}/data-model/analyze")
+async def analyze_data_model(
+    project_id: str,
+    story_id: str,
+    db: AsyncSession = Depends(get_db),
+):
+    _, _, story = await get_story_context(project_id, story_id, db)
+
+    if not story.data_model:
+        raise HTTPException(status_code=404, detail="No data model to analyze.")
+
+    model = json.loads(story.data_model)
+    analyzer = DataModelAnalyzer()
+    return analyzer.analyze(model)
+
+
+@router.post("/{story_id}/data-model/optimize")
+async def optimize_data_model(
+    project_id: str,
+    story_id: str,
+    body: DataModelOptimizeRequest,
+    db: AsyncSession = Depends(get_db),
+):
+    project, feature, story = await get_story_context(
+        project_id, story_id, db
+    )
+
+    if not story.data_model:
+        raise HTTPException(
+            status_code=400,
+            detail="No data model to optimize. Generate or upload one first.",
+        )
+
+    existing_model = json.loads(story.data_model)
+    workspace = await _resolve_workspace(project, db)
+
+    generator = DataModelGenerator(
+        workspace_path=workspace,
+        max_budget_usd=min(project.claude_max_budget_usd, 1.0),
+    )
+
+    try:
+        optimized = await generator.optimize(existing_model, body.actions)
+    except DataModelGenerationError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+
+    story.data_model = json.dumps(optimized)
+    story.data_model_status = "draft"
+    story.data_model_approved_at = None
+    await db.commit()
+    await db.refresh(story)
+
+    return {
+        "project_id": project.id,
+        "feature_id": feature.id,
+        "feature_title": feature.title,
+        "user_story_id": story.id,
+        "user_story_title": story.title,
+        "implementation_plan": _load_json_object(story.implementation_plan),
+        "implementation_plan_status": story.implementation_plan_status,
+        "approved_at": story.implementation_plan_approved_at,
+        "data_model": optimized,
+        "data_model_status": story.data_model_status,
+        "data_model_approved_at": story.data_model_approved_at,
+    }

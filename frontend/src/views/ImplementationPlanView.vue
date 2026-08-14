@@ -178,13 +178,40 @@ const uploadingModel = ref(false)
 const approvingModel = ref(false)
 const showDownloadMenu = ref(false)
 
+// Advanced generation options
+const showAdvancedOptions = ref(false)
+const selectedNormalization = ref('3nf')
+const selectedOptimizations = ref<string[]>([])
+
+// Analysis
+const analysisResult = ref<any>(null)
+const analyzing = ref(false)
+const showAnalysis = ref(false)
+
+// Optimize
+const optimizing = ref(false)
+const showOptimizePanel = ref(false)
+const selectedOptimizeActions = ref<string[]>([])
+
+// Version diff
+const previousModel = ref<any>(null)
+
 async function generateDataModel() {
   generatingModel.value = true
   error.value = ''
+  if (dataModel.value) {
+    previousModel.value = JSON.parse(JSON.stringify(dataModel.value))
+  }
   try {
-    const payload: { user_prompt?: string } = {}
+    const payload: { user_prompt?: string; normalization?: string; optimizations?: string[] } = {}
     if (userPrompt.value.trim()) {
       payload.user_prompt = userPrompt.value.trim()
+    }
+    if (selectedNormalization.value) {
+      payload.normalization = selectedNormalization.value
+    }
+    if (selectedOptimizations.value.length) {
+      payload.optimizations = selectedOptimizations.value
     }
     const res = await api.post(
       `/projects/${projectId}/requirements/${storyId}/data-model`,
@@ -193,6 +220,7 @@ async function generateDataModel() {
     data.value = res.data
     showPromptInput.value = false
     userPrompt.value = ''
+    analysisResult.value = null
   } catch (err: unknown) {
     if (axios.isAxiosError(err)) {
       const d = err.response?.data?.detail
@@ -264,6 +292,57 @@ function downloadDataModel(format: string) {
     '_blank',
   )
   showDownloadMenu.value = false
+}
+
+async function analyzeDataModel() {
+  analyzing.value = true
+  error.value = ''
+  try {
+    const res = await api.post(
+      `/projects/${projectId}/requirements/${storyId}/data-model/analyze`,
+    )
+    analysisResult.value = res.data
+    showAnalysis.value = true
+  } catch (err: unknown) {
+    if (axios.isAxiosError(err)) {
+      const d = err.response?.data?.detail
+      error.value = typeof d === 'string' ? d : JSON.stringify(d)
+    }
+  } finally {
+    analyzing.value = false
+  }
+}
+
+async function optimizeDataModel() {
+  if (!selectedOptimizeActions.value.length) return
+  optimizing.value = true
+  error.value = ''
+  if (dataModel.value) {
+    previousModel.value = JSON.parse(JSON.stringify(dataModel.value))
+  }
+  try {
+    const res = await api.post(
+      `/projects/${projectId}/requirements/${storyId}/data-model/optimize`,
+      { actions: selectedOptimizeActions.value },
+    )
+    data.value = res.data
+    showOptimizePanel.value = false
+    selectedOptimizeActions.value = []
+    analysisResult.value = null
+  } catch (err: unknown) {
+    if (axios.isAxiosError(err)) {
+      const d = err.response?.data?.detail
+      error.value = typeof d === 'string' ? d : JSON.stringify(d)
+    }
+  } finally {
+    optimizing.value = false
+  }
+}
+
+function toggleOptimizeAction(action: string) {
+  const idx = selectedOptimizeActions.value.indexOf(action)
+  if (idx >= 0) selectedOptimizeActions.value.splice(idx, 1)
+  else selectedOptimizeActions.value.push(action)
 }
 
 // ── Implementation Plan Approval (with data model gate) ─────────────────────
@@ -594,6 +673,28 @@ onMounted(loadPlan)
                 </div>
               </div>
 
+              <!-- Analyze button -->
+              <button
+                v-if="dataModel"
+                class="text-xs px-3 py-1.5 rounded-lg border border-gray-200 text-gray-600 hover:border-purple-400 hover:text-purple-600 inline-flex items-center gap-1 disabled:opacity-50"
+                :disabled="analyzing"
+                @click="analyzeDataModel"
+              >
+                <i :class="analyzing ? 'pi pi-spin pi-spinner' : 'pi pi-chart-bar'" />
+                {{ analyzing ? 'Analyzing...' : 'Analyze' }}
+              </button>
+
+              <!-- Optimize button -->
+              <button
+                v-if="dataModel"
+                class="text-xs px-3 py-1.5 rounded-lg border border-gray-200 text-gray-600 hover:border-amber-400 hover:text-amber-600 inline-flex items-center gap-1 disabled:opacity-50"
+                :disabled="optimizing"
+                @click="showOptimizePanel = !showOptimizePanel"
+              >
+                <i :class="optimizing ? 'pi pi-spin pi-spinner' : 'pi pi-bolt'" />
+                {{ optimizing ? 'Optimizing...' : 'Optimize' }}
+              </button>
+
               <!-- Add instructions toggle -->
               <button
                 v-if="dataModel && !showPromptInput"
@@ -614,7 +715,82 @@ onMounted(loadPlan)
               placeholder="e.g., Include soft deletes, add a status enum, use UUID primary keys, add audit fields..."
               class="w-full text-sm rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 p-3 focus:outline-none focus:ring-2 focus:ring-blue-400 resize-y"
             />
-            <div v-if="showPromptInput && dataModel" class="mt-1 flex justify-end">
+
+            <!-- Advanced Options accordion -->
+            <div class="mt-3 border border-gray-200 dark:border-gray-600 rounded-lg overflow-hidden">
+              <button
+                class="w-full flex items-center justify-between px-4 py-2.5 text-xs font-medium text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700"
+                @click="showAdvancedOptions = !showAdvancedOptions"
+              >
+                <span>Advanced Options</span>
+                <i :class="showAdvancedOptions ? 'pi pi-chevron-up' : 'pi pi-chevron-down'" class="text-[10px]" />
+              </button>
+
+              <div v-if="showAdvancedOptions" class="px-4 pb-4 border-t border-gray-200 dark:border-gray-600 pt-3 space-y-4">
+                <!-- Normalization Level -->
+                <div>
+                  <label class="text-xs text-gray-500 dark:text-gray-400 uppercase font-medium mb-2 block">Normalization Level</label>
+                  <div class="grid grid-cols-5 gap-2">
+                    <label
+                      v-for="nf in [
+                        { value: '1nf', label: '1NF', desc: 'Atomic values' },
+                        { value: '2nf', label: '2NF', desc: 'No partial deps' },
+                        { value: '3nf', label: '3NF', desc: 'No transitive deps' },
+                        { value: 'bcnf', label: 'BCNF', desc: 'Strictest form' },
+                        { value: 'denormalized', label: 'Denorm', desc: 'Read-optimized' },
+                      ]"
+                      :key="nf.value"
+                      class="flex flex-col items-center p-2 rounded-lg border cursor-pointer text-center transition-colors"
+                      :class="selectedNormalization === nf.value
+                        ? 'border-blue-500 bg-blue-50 dark:bg-blue-900/20 text-blue-700 dark:text-blue-300'
+                        : 'border-gray-200 dark:border-gray-600 hover:border-gray-300'"
+                    >
+                      <input
+                        type="radio"
+                        :value="nf.value"
+                        v-model="selectedNormalization"
+                        class="sr-only"
+                      />
+                      <span class="text-xs font-semibold">{{ nf.label }}</span>
+                      <span class="text-[10px] text-gray-400 mt-0.5">{{ nf.desc }}</span>
+                    </label>
+                  </div>
+                </div>
+
+                <!-- Optimization Preferences -->
+                <div>
+                  <label class="text-xs text-gray-500 dark:text-gray-400 uppercase font-medium mb-2 block">Optimization Preferences</label>
+                  <div class="grid grid-cols-2 gap-2">
+                    <label
+                      v-for="opt in [
+                        { value: 'read_heavy', label: 'Read-heavy' },
+                        { value: 'write_heavy', label: 'Write-heavy' },
+                        { value: 'audit_trail', label: 'Audit trail' },
+                        { value: 'soft_deletes', label: 'Soft deletes' },
+                        { value: 'multi_tenant', label: 'Multi-tenant' },
+                        { value: 'versioning', label: 'Versioning' },
+                        { value: 'partitioning_ready', label: 'Partitioning-ready' },
+                      ]"
+                      :key="opt.value"
+                      class="flex items-center gap-2 px-3 py-2 rounded-lg border cursor-pointer text-xs transition-colors"
+                      :class="selectedOptimizations.includes(opt.value)
+                        ? 'border-blue-500 bg-blue-50 dark:bg-blue-900/20 text-blue-700 dark:text-blue-300'
+                        : 'border-gray-200 dark:border-gray-600 hover:border-gray-300 text-gray-600 dark:text-gray-300'"
+                    >
+                      <input
+                        type="checkbox"
+                        :value="opt.value"
+                        v-model="selectedOptimizations"
+                        class="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                      />
+                      {{ opt.label }}
+                    </label>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div v-if="showPromptInput && dataModel" class="mt-2 flex justify-end">
               <button
                 class="text-xs text-gray-400 hover:text-gray-600"
                 @click="showPromptInput = false; userPrompt = ''"
@@ -660,6 +836,130 @@ onMounted(loadPlan)
               v-else
               :model="dataModel"
             />
+
+            <!-- Optimize Panel -->
+            <div v-if="showOptimizePanel" class="mt-4 p-4 bg-amber-50 dark:bg-amber-900/10 border border-amber-200 dark:border-amber-800 rounded-lg">
+              <h4 class="text-sm font-medium text-amber-800 dark:text-amber-300 mb-3">Optimize Data Model</h4>
+              <p class="text-xs text-gray-500 mb-3">Select optimizations to apply. The AI will modify the data model accordingly.</p>
+              <div class="grid grid-cols-2 gap-2 mb-4">
+                <label
+                  v-for="action in [
+                    { value: 'normalize_3nf', label: 'Normalize to 3NF' },
+                    { value: 'add_indexes', label: 'Add missing indexes' },
+                    { value: 'add_audit_fields', label: 'Add audit fields' },
+                    { value: 'add_soft_deletes', label: 'Add soft deletes' },
+                    { value: 'split_large_entities', label: 'Split large entities' },
+                    { value: 'remove_redundant_fields', label: 'Remove redundant fields' },
+                  ]"
+                  :key="action.value"
+                  class="flex items-center gap-2 px-3 py-2 rounded border cursor-pointer text-xs"
+                  :class="selectedOptimizeActions.includes(action.value)
+                    ? 'border-amber-500 bg-amber-100 dark:bg-amber-900/30 text-amber-800 dark:text-amber-200'
+                    : 'border-gray-200 dark:border-gray-600 text-gray-600 dark:text-gray-300'"
+                >
+                  <input
+                    type="checkbox"
+                    :checked="selectedOptimizeActions.includes(action.value)"
+                    @change="toggleOptimizeAction(action.value)"
+                    class="rounded border-gray-300 text-amber-600 focus:ring-amber-500"
+                  />
+                  {{ action.label }}
+                </label>
+              </div>
+              <div class="flex items-center gap-3">
+                <button
+                  class="text-xs px-4 py-2 rounded-lg bg-amber-600 text-white hover:bg-amber-700 disabled:opacity-50"
+                  :disabled="!selectedOptimizeActions.length || optimizing"
+                  @click="optimizeDataModel"
+                >
+                  <i :class="optimizing ? 'pi pi-spin pi-spinner mr-1' : 'pi pi-bolt mr-1'" />
+                  {{ optimizing ? 'Optimizing...' : 'Apply Optimizations' }}
+                </button>
+                <button class="text-xs text-gray-500 hover:text-gray-700" @click="showOptimizePanel = false">Cancel</button>
+              </div>
+            </div>
+
+            <!-- Analysis Results -->
+            <div v-if="showAnalysis && analysisResult" class="mt-4 p-4 bg-purple-50 dark:bg-purple-900/10 border border-purple-200 dark:border-purple-800 rounded-lg">
+              <div class="flex items-center justify-between mb-3">
+                <h4 class="text-sm font-medium text-purple-800 dark:text-purple-300">Analysis Results</h4>
+                <button class="text-xs text-gray-400 hover:text-gray-600" @click="showAnalysis = false">Close</button>
+              </div>
+
+              <!-- Stats -->
+              <div class="grid grid-cols-4 gap-3 mb-4">
+                <div class="text-center p-2 bg-white dark:bg-gray-800 rounded border border-gray-100 dark:border-gray-700">
+                  <div class="text-lg font-bold text-gray-800 dark:text-gray-200">{{ analysisResult.statistics.entity_count }}</div>
+                  <div class="text-[10px] text-gray-400">Entities</div>
+                </div>
+                <div class="text-center p-2 bg-white dark:bg-gray-800 rounded border border-gray-100 dark:border-gray-700">
+                  <div class="text-lg font-bold text-gray-800 dark:text-gray-200">{{ analysisResult.statistics.total_fields }}</div>
+                  <div class="text-[10px] text-gray-400">Fields</div>
+                </div>
+                <div class="text-center p-2 bg-white dark:bg-gray-800 rounded border border-gray-100 dark:border-gray-700">
+                  <div class="text-lg font-bold text-gray-800 dark:text-gray-200">{{ analysisResult.statistics.indexed_field_count }}</div>
+                  <div class="text-[10px] text-gray-400">Indexed</div>
+                </div>
+                <div class="text-center p-2 bg-white dark:bg-gray-800 rounded border border-gray-100 dark:border-gray-700">
+                  <div class="text-lg font-bold text-purple-600">{{ analysisResult.normalization_level.detected_level }}</div>
+                  <div class="text-[10px] text-gray-400">NF Level</div>
+                </div>
+              </div>
+
+              <!-- Findings -->
+              <div v-if="analysisResult.findings.length" class="space-y-2">
+                <div
+                  v-for="(finding, i) in analysisResult.findings"
+                  :key="i"
+                  class="flex items-start gap-2 text-xs p-2 rounded"
+                  :class="{
+                    'bg-red-50 dark:bg-red-900/10': finding.severity === 'error',
+                    'bg-yellow-50 dark:bg-yellow-900/10': finding.severity === 'warning',
+                    'bg-blue-50 dark:bg-blue-900/10': finding.severity === 'info',
+                  }"
+                >
+                  <i
+                    class="pi mt-0.5"
+                    :class="{
+                      'pi-times-circle text-red-500': finding.severity === 'error',
+                      'pi-exclamation-triangle text-yellow-500': finding.severity === 'warning',
+                      'pi-info-circle text-blue-500': finding.severity === 'info',
+                    }"
+                  />
+                  <div>
+                    <span class="font-medium text-gray-700 dark:text-gray-200">{{ finding.entity }}</span>
+                    <span v-if="finding.field" class="text-gray-400">.{{ finding.field }}</span>
+                    <span class="mx-1 text-gray-300">—</span>
+                    <span class="text-gray-600 dark:text-gray-300">{{ finding.message }}</span>
+                    <p class="text-gray-400 mt-0.5 italic">{{ finding.suggestion }}</p>
+                  </div>
+                </div>
+              </div>
+              <p v-else class="text-xs text-green-600 italic">No issues found. The data model looks good!</p>
+            </div>
+
+            <!-- Change Log (diff from previous version) -->
+            <div v-if="dataModel.change_log?.length" class="mt-4 p-4 bg-gray-50 dark:bg-gray-900/30 border border-gray-200 dark:border-gray-700 rounded-lg">
+              <h4 class="text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Changes (v{{ dataModel.version }})</h4>
+              <div class="space-y-1">
+                <div
+                  v-for="(change, i) in dataModel.change_log"
+                  :key="i"
+                  class="flex items-center gap-2 text-xs"
+                >
+                  <span
+                    class="px-1.5 py-0.5 rounded text-[10px] font-medium"
+                    :class="{
+                      'bg-green-100 text-green-700 dark:bg-green-900 dark:text-green-300': change.action === 'created',
+                      'bg-blue-100 text-blue-700 dark:bg-blue-900 dark:text-blue-300': change.action === 'modified',
+                      'bg-red-100 text-red-700 dark:bg-red-900 dark:text-red-300': change.action === 'removed',
+                    }"
+                  >{{ change.action }}</span>
+                  <span class="font-medium text-gray-700 dark:text-gray-200">{{ change.entity }}</span>
+                  <span class="text-gray-400">{{ change.reason }}</span>
+                </div>
+              </div>
+            </div>
 
             <!-- Data Model Approval -->
             <div class="mt-4 pt-4 border-t border-gray-200 dark:border-gray-700">

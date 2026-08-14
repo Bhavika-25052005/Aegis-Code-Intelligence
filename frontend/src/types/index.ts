@@ -133,3 +133,29 @@ export interface DataModel {
   enums: DataModelEnum[]
   change_log: DataModelChangeLog[]
 }
+
+export interface DataModelAnalysisFinding {
+  severity: 'error' | 'warning' | 'info'
+  category: string
+  entity: string
+  field: string | null
+  message: string
+  suggestion: string
+}
+
+export interface DataModelAnalysis {
+  normalization_level: {
+    detected_level: string
+    violations: Record<string, string[]>
+  }
+  findings: DataModelAnalysisFinding[]
+  statistics: {
+    entity_count: number
+    total_fields: number
+    total_relationships: number
+    total_indexes: number
+    indexed_field_count: number
+    avg_fields_per_entity: number
+    enum_count: number
+  }
+}
