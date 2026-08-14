@@ -131,6 +131,29 @@ async def init_db():
                         )
                     )
 
+                # Data Model
+                if "data_model" not in existing_columns:
+                    connection.execute(
+                        text(
+                            "ALTER TABLE user_stories "
+                            "ADD COLUMN data_model TEXT DEFAULT ''"
+                        )
+                    )
+                if "data_model_status" not in existing_columns:
+                    connection.execute(
+                        text(
+                            "ALTER TABLE user_stories "
+                            "ADD COLUMN data_model_status VARCHAR(20) DEFAULT 'not_generated'"
+                        )
+                    )
+                if "data_model_approved_at" not in existing_columns:
+                    connection.execute(
+                        text(
+                            "ALTER TABLE user_stories "
+                            "ADD COLUMN data_model_approved_at DATETIME"
+                        )
+                    )
+
             # Day 2 - projects columns
             if "projects" in tables:
                 project_columns = {
