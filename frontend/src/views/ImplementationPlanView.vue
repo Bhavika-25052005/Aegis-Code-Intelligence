@@ -3,6 +3,8 @@ import { computed, onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import axios from 'axios'
 import api from '../api/client'
+import DataModelTable from '../components/implementation/DataModelTable.vue'
+import DataModelDiagram from '../components/implementation/DataModelDiagram.vue'
 
 const route = useRoute()
 const router = useRouter()
@@ -65,14 +67,33 @@ async function generatePlan() {
   }
 }
 
-async function approvePlan() {
+function handleApprovePlan() {
+  if (!dataModel.value) {
+    showNoModelConfirm.value = true
+    return
+  }
+  if (dataModel.value && dataModelStatus.value !== 'approved') {
+    error.value = 'Approve the data model before approving the implementation plan.'
+    return
+  }
+  approvePlan(false)
+}
+
+async function approvePlan(skipDataModel: boolean) {
   approving.value = true
   error.value = ''
+  showNoModelConfirm.value = false
   try {
     await api.post(
       `/projects/${projectId}/requirements/${storyId}/implementation-plan/approve`,
+      { skip_data_model: skipDataModel },
     )
     await loadPlan()
+  } catch (err: unknown) {
+    if (axios.isAxiosError(err)) {
+      const d = err.response?.data?.detail
+      error.value = typeof d === 'string' ? d : JSON.stringify(d)
+    }
   } finally {
     approving.value = false
   }
@@ -110,6 +131,8 @@ async function saveEdit(section: string) {
       payload.planned_changes = editDraft.value
     } else if (section === 'task_approaches') {
       payload.task_plan = editDraft.value
+    } else if (section === 'data_model') {
+      payload.data_model = editDraft.value
     } else {
       payload[section] = editDraft.value
     }
@@ -124,6 +147,7 @@ async function saveEdit(section: string) {
       implementation_plan: res.data.implementation_plan,
       implementation_plan_status: res.data.implementation_plan_status,
       approved_at: res.data.approved_at,
+      data_model: res.data.data_model ?? data.value?.data_model,
     }
     editingSection.value = null
     editDraft.value = null
@@ -141,6 +165,110 @@ function addListItem(arr: string[]) {
 function removeListItem(arr: string[], i: number) {
   arr.splice(i, 1)
 }
+
+// ── Data Model ──────────────────────────────────────────────────────────────
+
+const dataModel = computed(() => data.value?.data_model ?? null)
+const dataModelStatus = computed(() => data.value?.data_model_status ?? 'not_generated')
+const dataModelView = ref<'table' | 'diagram'>('table')
+const generatingModel = ref(false)
+const userPrompt = ref('')
+const showPromptInput = ref(false)
+const uploadingModel = ref(false)
+const approvingModel = ref(false)
+const showDownloadMenu = ref(false)
+
+async function generateDataModel() {
+  generatingModel.value = true
+  error.value = ''
+  try {
+    const payload: { user_prompt?: string } = {}
+    if (userPrompt.value.trim()) {
+      payload.user_prompt = userPrompt.value.trim()
+    }
+    const res = await api.post(
+      `/projects/${projectId}/requirements/${storyId}/data-model`,
+      payload,
+    )
+    data.value = res.data
+    showPromptInput.value = false
+    userPrompt.value = ''
+  } catch (err: unknown) {
+    if (axios.isAxiosError(err)) {
+      const d = err.response?.data?.detail
+      error.value = typeof d === 'string' ? d : JSON.stringify(d)
+    }
+  } finally {
+    generatingModel.value = false
+  }
+}
+
+async function uploadDataModel(file: File) {
+  uploadingModel.value = true
+  error.value = ''
+  try {
+    const formData = new FormData()
+    formData.append('file', file)
+    const res = await api.post(
+      `/projects/${projectId}/requirements/${storyId}/data-model/upload`,
+      formData,
+      { headers: { 'Content-Type': 'multipart/form-data' } },
+    )
+    data.value = res.data
+  } catch (err: unknown) {
+    if (axios.isAxiosError(err)) {
+      const d = err.response?.data?.detail
+      error.value = typeof d === 'string' ? d : JSON.stringify(d)
+    }
+  } finally {
+    uploadingModel.value = false
+  }
+}
+
+function onDataModelFileSelect(event: Event) {
+  const target = event.target as HTMLInputElement
+  if (target.files && target.files.length > 0) {
+    uploadDataModel(target.files[0])
+  }
+  target.value = ''
+}
+
+async function approveDataModel() {
+  approvingModel.value = true
+  error.value = ''
+  try {
+    await api.post(
+      `/projects/${projectId}/requirements/${storyId}/data-model/approve`,
+    )
+    await loadPlan()
+  } catch (err: unknown) {
+    if (axios.isAxiosError(err)) {
+      const d = err.response?.data?.detail
+      error.value = typeof d === 'string' ? d : JSON.stringify(d)
+    }
+  } finally {
+    approvingModel.value = false
+  }
+}
+
+async function reopenDataModel() {
+  await api.post(
+    `/projects/${projectId}/requirements/${storyId}/data-model/reopen`,
+  )
+  await loadPlan()
+}
+
+function downloadDataModel(format: string) {
+  window.open(
+    `/api/projects/${projectId}/requirements/${storyId}/data-model/download?format=${format}`,
+    '_blank',
+  )
+  showDownloadMenu.value = false
+}
+
+// ── Implementation Plan Approval (with data model gate) ─────────────────────
+
+const showNoModelConfirm = ref(false)
 
 // ── Navigation ───────────────────────────────────────────────────────────────
 
@@ -232,7 +360,7 @@ onMounted(loadPlan)
             v-if="data.implementation_plan_status !== 'approved'"
             class="px-5 py-2.5 rounded-lg bg-green-600 text-white disabled:opacity-50"
             :disabled="approving"
-            @click="approvePlan"
+            @click="handleApprovePlan"
           >
             {{ approving ? 'Approving...' : 'Approve Implementation Plan' }}
           </button>
@@ -381,6 +509,260 @@ onMounted(loadPlan)
           </template>
         </section>
 
+        <!-- Data Model -->
+        <section class="bg-white dark:bg-gray-800 rounded-xl border p-5">
+          <div class="flex items-center justify-between mb-4">
+            <h3 class="font-semibold">Data Model</h3>
+            <div class="flex items-center gap-3">
+              <!-- View toggle (only shown when model exists) -->
+              <div v-if="dataModel && dataModel.entities?.length" class="flex rounded-lg border border-gray-200 dark:border-gray-600 overflow-hidden">
+                <button
+                  class="text-xs px-3 py-1.5 transition-colors"
+                  :class="dataModelView === 'table' ? 'bg-blue-600 text-white' : 'text-gray-500 hover:bg-gray-50 dark:hover:bg-gray-700'"
+                  @click="dataModelView = 'table'"
+                >
+                  <i class="pi pi-table mr-1" />Table
+                </button>
+                <button
+                  class="text-xs px-3 py-1.5 transition-colors"
+                  :class="dataModelView === 'diagram' ? 'bg-blue-600 text-white' : 'text-gray-500 hover:bg-gray-50 dark:hover:bg-gray-700'"
+                  @click="dataModelView = 'diagram'"
+                >
+                  <i class="pi pi-sitemap mr-1" />Diagram
+                </button>
+              </div>
+
+              <!-- Edit button -->
+              <button
+                v-if="dataModel && editingSection !== 'data_model'"
+                class="text-xs px-3 py-1 rounded-lg border border-gray-200 text-gray-500 hover:border-blue-300 hover:text-blue-600"
+                @click="startEdit('data_model', dataModel)"
+              >Edit</button>
+              <div v-if="editingSection === 'data_model'" class="flex gap-2">
+                <button class="text-xs px-3 py-1 rounded-lg bg-blue-600 text-white disabled:opacity-50" :disabled="saving" @click="saveEdit('data_model')">{{ saving ? 'Saving…' : 'Save' }}</button>
+                <button class="text-xs px-3 py-1 rounded-lg border border-gray-200 text-gray-500" @click="cancelEdit">Cancel</button>
+              </div>
+
+              <!-- Generate / Regenerate button -->
+              <button
+                class="text-xs px-3 py-1.5 rounded-lg text-white disabled:opacity-50"
+                :class="dataModel ? 'bg-gray-500 hover:bg-gray-600' : 'bg-green-600 hover:bg-green-700'"
+                :disabled="generatingModel"
+                @click="generateDataModel"
+              >
+                <template v-if="generatingModel">
+                  <i class="pi pi-spin pi-spinner mr-1" />Generating…
+                </template>
+                <template v-else-if="dataModel">
+                  <i class="pi pi-refresh mr-1" />Regenerate
+                </template>
+                <template v-else>
+                  <i class="pi pi-database mr-1" />Generate Data Model
+                </template>
+              </button>
+
+              <!-- Upload button -->
+              <label
+                class="text-xs px-3 py-1.5 rounded-lg bg-blue-600 text-white cursor-pointer hover:bg-blue-700 inline-flex items-center gap-1 disabled:opacity-50"
+                :class="{ 'opacity-50 pointer-events-none': uploadingModel }"
+              >
+                <i :class="uploadingModel ? 'pi pi-spin pi-spinner' : 'pi pi-upload'" />
+                {{ uploadingModel ? 'Uploading…' : 'Upload' }}
+                <input
+                  type="file"
+                  accept=".json,.sql,.dbml"
+                  class="hidden"
+                  @change="onDataModelFileSelect"
+                />
+              </label>
+
+              <!-- Download dropdown -->
+              <div v-if="dataModel" class="relative">
+                <button
+                  class="text-xs px-3 py-1.5 rounded-lg border border-gray-200 text-gray-600 hover:border-gray-400 inline-flex items-center gap-1"
+                  @click="showDownloadMenu = !showDownloadMenu"
+                >
+                  <i class="pi pi-download" />Download
+                </button>
+                <div
+                  v-if="showDownloadMenu"
+                  class="absolute right-0 top-full mt-1 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-600 rounded-lg shadow-lg z-10 py-1 min-w-[120px]"
+                >
+                  <button class="w-full text-left text-xs px-3 py-1.5 hover:bg-gray-100 dark:hover:bg-gray-700" @click="downloadDataModel('json')">JSON</button>
+                  <button class="w-full text-left text-xs px-3 py-1.5 hover:bg-gray-100 dark:hover:bg-gray-700" @click="downloadDataModel('sql')">SQL</button>
+                  <button class="w-full text-left text-xs px-3 py-1.5 hover:bg-gray-100 dark:hover:bg-gray-700" @click="downloadDataModel('dbml')">DBML</button>
+                </div>
+              </div>
+
+              <!-- Add instructions toggle -->
+              <button
+                v-if="dataModel && !showPromptInput"
+                class="text-xs text-blue-600 hover:text-blue-800 underline"
+                @click="showPromptInput = true"
+              >+ Add instructions</button>
+            </div>
+          </div>
+
+          <!-- User prompt for generation -->
+          <div v-if="showPromptInput || !dataModel" class="mb-4">
+            <label class="text-xs text-gray-500 dark:text-gray-400 uppercase font-medium mb-1 block">
+              Custom Instructions (optional)
+            </label>
+            <textarea
+              v-model="userPrompt"
+              rows="3"
+              placeholder="e.g., Include soft deletes, add a status enum, use UUID primary keys, add audit fields..."
+              class="w-full text-sm rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 p-3 focus:outline-none focus:ring-2 focus:ring-blue-400 resize-y"
+            />
+            <div v-if="showPromptInput && dataModel" class="mt-1 flex justify-end">
+              <button
+                class="text-xs text-gray-400 hover:text-gray-600"
+                @click="showPromptInput = false; userPrompt = ''"
+              >Cancel</button>
+            </div>
+          </div>
+
+          <!-- Empty state -->
+          <div v-if="!dataModel" class="text-center py-8">
+            <i class="pi pi-database text-4xl text-gray-300 mb-3" />
+            <p class="text-sm text-gray-500 dark:text-gray-400">
+              No data model generated yet. Click "Generate Data Model" or upload an existing schema file (.json, .sql, .dbml).
+            </p>
+          </div>
+
+          <!-- Data model content -->
+          <template v-else-if="editingSection !== 'data_model'">
+            <!-- Version & mode badge -->
+            <div class="flex items-center gap-2 mb-4">
+              <span class="text-xs px-2 py-0.5 rounded bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300">
+                v{{ dataModel.version }}
+              </span>
+              <span
+                class="text-xs px-2 py-0.5 rounded"
+                :class="dataModel.project_mode === 'new_project' ? 'bg-green-100 text-green-700 dark:bg-green-900 dark:text-green-300' : 'bg-blue-100 text-blue-700 dark:bg-blue-900 dark:text-blue-300'"
+              >
+                {{ dataModel.project_mode === 'new_project' ? 'New' : 'Enhancement' }}
+              </span>
+              <span class="text-xs text-gray-400">
+                {{ dataModel.entities?.length ?? 0 }} entities, {{ dataModel.enums?.length ?? 0 }} enums
+              </span>
+            </div>
+
+            <!-- Table view -->
+            <DataModelTable
+              v-if="dataModelView === 'table'"
+              :model="dataModel"
+              :readonly="true"
+            />
+
+            <!-- Diagram view -->
+            <DataModelDiagram
+              v-else
+              :model="dataModel"
+            />
+
+            <!-- Data Model Approval -->
+            <div class="mt-4 pt-4 border-t border-gray-200 dark:border-gray-700">
+              <div v-if="dataModelStatus !== 'approved'" class="flex items-center gap-3">
+                <button
+                  class="px-4 py-2 rounded-lg bg-green-600 text-white text-sm disabled:opacity-50 hover:bg-green-700"
+                  :disabled="approvingModel"
+                  @click="approveDataModel"
+                >
+                  {{ approvingModel ? 'Approving...' : 'Approve Data Model' }}
+                </button>
+                <span class="text-xs text-gray-400">Approval required before approving the implementation plan.</span>
+              </div>
+              <div v-else class="flex items-center gap-4">
+                <span class="text-green-600 font-medium text-sm">&#10003; Data Model Approved</span>
+                <button class="text-xs text-gray-500 underline" @click="reopenDataModel">Reopen</button>
+              </div>
+            </div>
+          </template>
+
+          <!-- Edit mode (JSON editor for data model) -->
+          <template v-else>
+            <p class="text-xs text-gray-500 mb-3">
+              Edit the data model structure below. You can modify entities, fields, relationships, enums, and constraints.
+            </p>
+            <div class="space-y-4">
+              <!-- Summary -->
+              <div>
+                <label class="text-xs text-gray-400 uppercase font-medium">Summary</label>
+                <textarea v-model="editDraft.summary" rows="2" class="w-full text-sm rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-700 p-2 resize-y mt-1" />
+              </div>
+
+              <!-- Entities -->
+              <div v-for="(entity, ei) in editDraft.entities" :key="ei" class="border border-gray-200 dark:border-gray-600 rounded-lg p-4">
+                <div class="flex items-center justify-between mb-3">
+                  <div class="flex items-center gap-2">
+                    <input v-model="entity.name" placeholder="Entity name" class="text-sm font-medium border border-gray-300 dark:border-gray-600 rounded px-2 py-1 bg-white dark:bg-gray-700" />
+                    <select v-model="entity.type" class="text-xs border border-gray-300 dark:border-gray-600 rounded px-2 py-1 bg-white dark:bg-gray-700">
+                      <option>table</option>
+                      <option>enum</option>
+                      <option>view</option>
+                      <option>embedded</option>
+                    </select>
+                  </div>
+                  <button class="text-xs text-red-500 border border-red-200 rounded px-2 py-1" @click="editDraft.entities.splice(ei, 1)">Remove Entity</button>
+                </div>
+                <div class="mb-2">
+                  <input v-model="entity.description" placeholder="Description" class="w-full text-sm border border-gray-300 dark:border-gray-600 rounded px-2 py-1 bg-white dark:bg-gray-700" />
+                </div>
+
+                <!-- Fields -->
+                <div class="mb-3">
+                  <div class="flex items-center justify-between mb-1">
+                    <span class="text-xs font-medium text-gray-500 uppercase">Fields</span>
+                    <button class="text-xs text-blue-600" @click="entity.fields.push({ name: '', type: 'VARCHAR(255)', primary_key: false, nullable: true, unique: false, indexed: false, default: null, description: '' })">+ Field</button>
+                  </div>
+                  <div v-for="(field, fi) in entity.fields" :key="fi" class="flex items-center gap-1.5 mb-1.5">
+                    <input v-model="field.name" placeholder="name" class="w-28 text-xs border border-gray-300 dark:border-gray-600 rounded px-1.5 py-1 bg-white dark:bg-gray-700 font-mono" />
+                    <input v-model="field.type" placeholder="type" class="w-28 text-xs border border-gray-300 dark:border-gray-600 rounded px-1.5 py-1 bg-white dark:bg-gray-700 font-mono" />
+                    <label class="text-xs flex items-center gap-0.5"><input type="checkbox" v-model="field.primary_key" class="rounded" />PK</label>
+                    <label class="text-xs flex items-center gap-0.5"><input type="checkbox" v-model="field.nullable" class="rounded" />Null</label>
+                    <label class="text-xs flex items-center gap-0.5"><input type="checkbox" v-model="field.unique" class="rounded" />Uniq</label>
+                    <label class="text-xs flex items-center gap-0.5"><input type="checkbox" v-model="field.indexed" class="rounded" />Idx</label>
+                    <input v-model="field.description" placeholder="description" class="flex-1 text-xs border border-gray-300 dark:border-gray-600 rounded px-1.5 py-1 bg-white dark:bg-gray-700" />
+                    <button class="text-xs text-red-400" @click="entity.fields.splice(fi, 1)">✕</button>
+                  </div>
+                </div>
+
+                <!-- Relationships -->
+                <div>
+                  <div class="flex items-center justify-between mb-1">
+                    <span class="text-xs font-medium text-gray-500 uppercase">Relationships</span>
+                    <button class="text-xs text-blue-600" @click="entity.relationships.push({ type: 'one_to_many', target_entity: '', foreign_key: '', on_delete: 'CASCADE', description: '' })">+ Relation</button>
+                  </div>
+                  <div v-for="(rel, ri) in entity.relationships" :key="ri" class="flex items-center gap-1.5 mb-1.5">
+                    <select v-model="rel.type" class="text-xs border border-gray-300 dark:border-gray-600 rounded px-1.5 py-1 bg-white dark:bg-gray-700">
+                      <option value="one_to_many">one_to_many</option>
+                      <option value="many_to_one">many_to_one</option>
+                      <option value="many_to_many">many_to_many</option>
+                      <option value="one_to_one">one_to_one</option>
+                    </select>
+                    <input v-model="rel.target_entity" placeholder="Target" class="w-28 text-xs border border-gray-300 dark:border-gray-600 rounded px-1.5 py-1 bg-white dark:bg-gray-700" />
+                    <input v-model="rel.foreign_key" placeholder="FK" class="w-24 text-xs border border-gray-300 dark:border-gray-600 rounded px-1.5 py-1 bg-white dark:bg-gray-700 font-mono" />
+                    <select v-model="rel.on_delete" class="text-xs border border-gray-300 dark:border-gray-600 rounded px-1.5 py-1 bg-white dark:bg-gray-700">
+                      <option>CASCADE</option>
+                      <option>SET_NULL</option>
+                      <option>RESTRICT</option>
+                    </select>
+                    <input v-model="rel.description" placeholder="description" class="flex-1 text-xs border border-gray-300 dark:border-gray-600 rounded px-1.5 py-1 bg-white dark:bg-gray-700" />
+                    <button class="text-xs text-red-400" @click="entity.relationships.splice(ri, 1)">✕</button>
+                  </div>
+                </div>
+              </div>
+
+              <!-- Add Entity button -->
+              <button
+                class="text-xs px-3 py-2 rounded-lg border border-dashed border-blue-300 text-blue-600 w-full"
+                @click="editDraft.entities.push({ name: '', description: '', type: 'table', fields: [], relationships: [], indexes: [], constraints: [] })"
+              >+ Add Entity</button>
+            </div>
+          </template>
+        </section>
+
         <!-- Ordered Task Execution -->
         <section class="bg-white dark:bg-gray-800 rounded-xl border p-5">
           <div class="flex items-center justify-between mb-4">
@@ -508,5 +890,29 @@ onMounted(loadPlan)
         </section>
       </template>
     </template>
+
+    <!-- Confirmation modal: approve without data model -->
+    <div
+      v-if="showNoModelConfirm"
+      class="fixed inset-0 z-50 flex items-center justify-center bg-black/40"
+      @click.self="showNoModelConfirm = false"
+    >
+      <div class="bg-white dark:bg-gray-800 rounded-xl shadow-xl p-6 max-w-md w-full mx-4">
+        <h4 class="font-semibold text-lg mb-2">Continue Without Data Model?</h4>
+        <p class="text-sm text-gray-600 dark:text-gray-300 mb-5">
+          No data model has been generated or uploaded. Are you sure you want to approve the implementation plan without a data model?
+        </p>
+        <div class="flex justify-end gap-3">
+          <button
+            class="px-4 py-2 text-sm rounded-lg border border-gray-200 text-gray-600 hover:bg-gray-50 dark:border-gray-600 dark:text-gray-300 dark:hover:bg-gray-700"
+            @click="showNoModelConfirm = false"
+          >Cancel</button>
+          <button
+            class="px-4 py-2 text-sm rounded-lg bg-green-600 text-white hover:bg-green-700"
+            @click="approvePlan(true)"
+          >Continue Without Data Model</button>
+        </div>
+      </div>
+    </div>
   </div>
 </template>

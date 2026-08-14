@@ -1,8 +1,10 @@
 import json
 from datetime import datetime
 from pathlib import Path
+from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, File, HTTPException, Query, Response, UploadFile
+from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
@@ -22,6 +24,20 @@ from app.services.implementation_planner import (
     ImplementationPlanner,
     ImplementationPlanningError,
 )
+from app.services.data_model_generator import (
+    DataModelGenerator,
+    DataModelGenerationError,
+)
+from app.services.data_model_parser import DataModelParser, DataModelParseError
+from app.services.data_model_serializer import DataModelSerializer
+
+
+class DataModelGenerateRequest(BaseModel):
+    user_prompt: Optional[str] = None
+
+
+class ImplementationPlanApproveRequest(BaseModel):
+    skip_data_model: bool = False
 
 router = APIRouter(
     prefix="/projects/{project_id}/requirements",
@@ -314,6 +330,9 @@ async def get_implementation_plan(
         "implementation_plan": _load_json_object(story.implementation_plan),
         "implementation_plan_status": story.implementation_plan_status,
         "approved_at": story.implementation_plan_approved_at,
+        "data_model": _load_json_object(story.data_model),
+        "data_model_status": story.data_model_status,
+        "data_model_approved_at": story.data_model_approved_at,
     }
 
 
@@ -387,6 +406,7 @@ async def generate_implementation_plan(
         "implementation_plan": plan,
         "implementation_plan_status": story.implementation_plan_status,
         "approved_at": story.implementation_plan_approved_at,
+        "data_model": _load_json_object(story.data_model),
     }
 
 
@@ -446,6 +466,13 @@ async def update_implementation_plan(
                     task_map[tid]["related_files"] = [str(f) for f in update["related_files"]]
         current["task_plan"] = list(task_map.values())
 
+    # Allow editing data_model independently
+    if "data_model" in body:
+        dm = body["data_model"]
+        if not isinstance(dm, dict):
+            raise HTTPException(status_code=422, detail="'data_model' must be an object.")
+        story.data_model = json.dumps(dm)
+
     story.implementation_plan = json.dumps(current)
     # Any edit resets approval
     story.implementation_plan_status = "draft"
@@ -459,6 +486,7 @@ async def update_implementation_plan(
         "implementation_plan": current,
         "implementation_plan_status": story.implementation_plan_status,
         "approved_at": story.implementation_plan_approved_at,
+        "data_model": _load_json_object(story.data_model),
     }
 
 
@@ -466,6 +494,7 @@ async def update_implementation_plan(
 async def approve_implementation_plan(
     project_id: str,
     story_id: str,
+    body: ImplementationPlanApproveRequest | None = None,
     db: AsyncSession = Depends(get_db),
 ):
     _, _, story = await get_story_context(project_id, story_id, db)
@@ -479,6 +508,20 @@ async def approve_implementation_plan(
         raise HTTPException(
             status_code=400,
             detail="Generate the implementation plan first.",
+        )
+
+    skip_data_model = body.skip_data_model if body else False
+
+    if story.data_model:
+        if story.data_model_status != "approved":
+            raise HTTPException(
+                status_code=400,
+                detail="Approve the data model before approving the implementation plan.",
+            )
+    elif not skip_data_model:
+        raise HTTPException(
+            status_code=400,
+            detail="No data model exists. Confirm to proceed without a data model.",
         )
 
     story.implementation_plan_status = "approved"
@@ -502,3 +545,228 @@ async def reopen_implementation_plan(
     story.implementation_plan_approved_at = None
     await db.commit()
     return {"status": "draft"}
+
+
+# ── Data Model endpoints ─────────────────────────────────────────────────────
+
+
+async def _find_existing_data_model(project_id: str, db: AsyncSession) -> dict | None:
+    result = await db.execute(
+        select(UserStory)
+        .join(Feature)
+        .where(
+            Feature.project_id == project_id,
+            UserStory.data_model != "",
+            UserStory.implementation_plan_status == "approved",
+        )
+        .order_by(UserStory.implementation_plan_approved_at.desc())
+        .limit(1)
+    )
+    story = result.scalar_one_or_none()
+    if story and story.data_model:
+        try:
+            return json.loads(story.data_model)
+        except json.JSONDecodeError:
+            return None
+    return None
+
+
+@router.post("/{story_id}/data-model")
+async def generate_data_model(
+    project_id: str,
+    story_id: str,
+    body: DataModelGenerateRequest | None = None,
+    db: AsyncSession = Depends(get_db),
+):
+    project, feature, story = await get_story_context(
+        project_id, story_id, db
+    )
+
+    if not story.implementation_plan:
+        raise HTTPException(
+            status_code=400,
+            detail="Generate the implementation plan before the data model.",
+        )
+
+    requirement = _load_json_object(story.requirement_analysis)
+    if not requirement:
+        raise HTTPException(
+            status_code=400,
+            detail="Approved requirement could not be loaded.",
+        )
+
+    plan = _load_json_object(story.implementation_plan)
+    if not plan:
+        raise HTTPException(
+            status_code=400,
+            detail="Implementation plan could not be loaded.",
+        )
+
+    workspace = await _resolve_workspace(project, db)
+
+    repository = RepositoryIntelligence(
+        project=project,
+        db=db,
+        workspace_path=workspace,
+    )
+    repository_context = await repository.find_relevant(
+        feature,
+        story,
+        requirement,
+    )
+
+    existing_model = await _find_existing_data_model(project.id, db)
+
+    generator = DataModelGenerator(
+        workspace_path=workspace,
+        max_budget_usd=min(project.claude_max_budget_usd, 1.0),
+    )
+
+    user_prompt = body.user_prompt if body else None
+
+    try:
+        data_model = await generator.generate(
+            feature,
+            story,
+            requirement,
+            plan,
+            existing_model,
+            repository_context,
+            user_prompt=user_prompt,
+        )
+    except DataModelGenerationError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+
+    story.data_model = json.dumps(data_model)
+    story.data_model_status = "draft"
+    story.data_model_approved_at = None
+    await db.commit()
+    await db.refresh(story)
+
+    return {
+        "project_id": project.id,
+        "feature_id": feature.id,
+        "feature_title": feature.title,
+        "user_story_id": story.id,
+        "user_story_title": story.title,
+        "implementation_plan": _load_json_object(story.implementation_plan),
+        "implementation_plan_status": story.implementation_plan_status,
+        "approved_at": story.implementation_plan_approved_at,
+        "data_model": data_model,
+        "data_model_status": story.data_model_status,
+        "data_model_approved_at": story.data_model_approved_at,
+    }
+
+
+@router.post("/{story_id}/data-model/upload")
+async def upload_data_model(
+    project_id: str,
+    story_id: str,
+    file: UploadFile = File(...),
+    db: AsyncSession = Depends(get_db),
+):
+    project, feature, story = await get_story_context(
+        project_id, story_id, db
+    )
+
+    content = await file.read()
+    if len(content) > 1_048_576:
+        raise HTTPException(status_code=400, detail="File too large (max 1MB).")
+
+    filename = file.filename or "upload.json"
+
+    parser = DataModelParser()
+    try:
+        data_model = parser.parse(content, filename)
+    except DataModelParseError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    story.data_model = json.dumps(data_model)
+    story.data_model_status = "draft"
+    story.data_model_approved_at = None
+    await db.commit()
+    await db.refresh(story)
+
+    return {
+        "project_id": project.id,
+        "feature_id": feature.id,
+        "feature_title": feature.title,
+        "user_story_id": story.id,
+        "user_story_title": story.title,
+        "implementation_plan": _load_json_object(story.implementation_plan),
+        "implementation_plan_status": story.implementation_plan_status,
+        "approved_at": story.implementation_plan_approved_at,
+        "data_model": data_model,
+        "data_model_status": story.data_model_status,
+        "data_model_approved_at": story.data_model_approved_at,
+    }
+
+
+@router.post("/{story_id}/data-model/approve")
+async def approve_data_model(
+    project_id: str,
+    story_id: str,
+    db: AsyncSession = Depends(get_db),
+):
+    _, _, story = await get_story_context(project_id, story_id, db)
+
+    if not story.data_model:
+        raise HTTPException(
+            status_code=400,
+            detail="No data model to approve. Generate or upload one first.",
+        )
+
+    story.data_model_status = "approved"
+    story.data_model_approved_at = datetime.utcnow()
+    await db.commit()
+
+    return {
+        "status": "approved",
+        "data_model_status": story.data_model_status,
+        "data_model_approved_at": story.data_model_approved_at,
+    }
+
+
+@router.post("/{story_id}/data-model/reopen")
+async def reopen_data_model(
+    project_id: str,
+    story_id: str,
+    db: AsyncSession = Depends(get_db),
+):
+    _, _, story = await get_story_context(project_id, story_id, db)
+    story.data_model_status = "draft"
+    story.data_model_approved_at = None
+    await db.commit()
+    return {"status": "draft"}
+
+
+@router.get("/{story_id}/data-model/download")
+async def download_data_model(
+    project_id: str,
+    story_id: str,
+    format: str = Query(default="json", regex="^(json|sql|dbml)$"),
+    db: AsyncSession = Depends(get_db),
+):
+    _, _, story = await get_story_context(project_id, story_id, db)
+
+    if not story.data_model:
+        raise HTTPException(status_code=404, detail="No data model exists.")
+
+    model = json.loads(story.data_model)
+    serializer = DataModelSerializer()
+    content = serializer.serialize(model, format)
+
+    media_types = {
+        "json": "application/json",
+        "sql": "text/plain",
+        "dbml": "text/plain",
+    }
+    extensions = {"json": "json", "sql": "sql", "dbml": "dbml"}
+
+    filename = f"data_model.{extensions[format]}"
+
+    return Response(
+        content=content,
+        media_type=media_types[format],
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )

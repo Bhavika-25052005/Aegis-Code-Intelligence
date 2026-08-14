@@ -69,3 +69,67 @@ export interface WebSocketMessage {
   type: string
   payload: Record<string, unknown>
 }
+
+// ── Data Model types ────────────────────────────────────────────────────────
+
+export interface DataModelField {
+  name: string
+  type: string
+  primary_key: boolean
+  nullable: boolean
+  unique: boolean
+  indexed: boolean
+  default: string | null
+  description: string
+}
+
+export interface DataModelRelationship {
+  type: 'one_to_many' | 'many_to_one' | 'many_to_many' | 'one_to_one'
+  target_entity: string
+  foreign_key: string
+  on_delete: string
+  description: string
+}
+
+export interface DataModelIndex {
+  name: string
+  fields: string[]
+  unique: boolean
+}
+
+export interface DataModelEntity {
+  name: string
+  description: string
+  type: string
+  fields: DataModelField[]
+  relationships: DataModelRelationship[]
+  indexes: DataModelIndex[]
+  constraints: string[]
+}
+
+export interface DataModelEnumValue {
+  name: string
+  description: string
+}
+
+export interface DataModelEnum {
+  name: string
+  description: string
+  values: DataModelEnumValue[]
+}
+
+export interface DataModelChangeLog {
+  entity: string
+  action: 'created' | 'modified' | 'removed'
+  reason: string
+  fields_changed: string[]
+}
+
+export interface DataModel {
+  version: number
+  project_mode: string
+  summary: string
+  entities: DataModelEntity[]
+  enums: DataModelEnum[]
+  change_log: DataModelChangeLog[]
+}
